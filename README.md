@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-d89a4a?style=flat-square" alt="version 1.1.0">
+  <img src="https://img.shields.io/badge/version-1.2.0-d89a4a?style=flat-square" alt="version 1.2.0">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
-  <img src="https://img.shields.io/badge/kernel-204%20KB%20%C2%B7%2029%20files-success?style=flat-square" alt="204 KB, 29 files">
+  <img src="https://img.shields.io/badge/kernel-220%20KB%20%C2%B7%2029%20files-success?style=flat-square" alt="220 KB, 29 files">
   <img src="https://img.shields.io/badge/skills-14-success?style=flat-square" alt="14 skills">
   <img src="https://img.shields.io/badge/runtime%20services-0-success?style=flat-square" alt="zero runtime services">
   <img src="https://img.shields.io/badge/contract-81%20lines-success?style=flat-square" alt="81-line contract">
@@ -23,9 +23,9 @@ working systems/business analyst: writing specs, maintaining a wiki mirrored
 from Confluence, auditing a documentation corpus. Everything beyond that is
 deliberately left out.
 
-The name follows [Keel](https://github.com/bogdanov-igor/keel), a sibling
-kernel by the same author, aimed at product development rather than documents.
-They share the layout, the installer approach and most of the plumbing.
+The name follows [Keel](https://github.com/bogdanov-igor/keel), my kernel
+for product development. The two share the layout, the installer approach
+and most of the plumbing; this one is for document work.
 
 Loft replaced specos, a setup I retired in June 2026 after finally working out
 why it kept "getting dumber" on ordinary markdown work. The overhead was
@@ -40,7 +40,7 @@ post-mortem, including what was and wasn't measured, is in
 
 ## Quickstart
 
-**1.** Download `loft_1.1.0.tgz` and `loft_1.1.0.tgz.sha256` from
+**1.** Download `loft_1.2.0.tgz` and `loft_1.2.0.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -61,8 +61,8 @@ see the [migration guide](docs/en/migration.md).
 
 ```sh
 cd /path/to/project                    # tgz + .sha256 copied here
-shasum -c loft_1.1.0.tgz.sha256        # integrity first: expect "OK"
-tar -xzf loft_1.1.0.tgz
+shasum -c loft_1.2.0.tgz.sha256        # integrity first: expect "OK"
+tar -xzf loft_1.2.0.tgz
 bash loft/install.sh                   # no argument = install right here
 ```
 
@@ -145,7 +145,14 @@ lxml); no LLM touches the content on the way through.
   in place, idempotently.
 - With `--unroll-pre`, tables holding multi-line JSON/XML examples become
   plain GFM and the code moves below the table as fenced blocks, byte for
-  byte.
+  byte. With `--expand-spans`, tables with merged cells (colspan/rowspan)
+  become plain GFM too: rowspan repeats the value, colspan pads with empty
+  cells — layout loss, never data loss.
+- Confluence attribute noise (`class`/`style`/`rel`/`data-*`) is scrubbed
+  before pandoc, so links come out as `[text](url)` → `[[wikilinks]]`
+  instead of raw `<a class=...>` HTML; Jira avatars and emoticons are
+  dropped. `fix_tables.py` applies the same cleanup to already-converted
+  wikis.
 
 Numbers from the corpus it was built against, a banking wiki of 446 pages:
 468 of 609 raw HTML tables came out as clean GFM (the rest are logged
@@ -165,7 +172,7 @@ case-insensitive, NFC), so if it comes back green, the graph has no holes.
 
 ## Tests
 
-`test/run.sh` runs 48 self-tests over the kernel's scripts: `link_check`, the
+`test/run.sh` runs 77 self-tests over the kernel's scripts: `link_check`, the
 table writer, `fix_tables` idempotence, the migration sweep, the update check
 and installer scenarios — all offline, against throwaway fixtures.
 `build-archive.sh` runs the suite as a release gate and then does a real

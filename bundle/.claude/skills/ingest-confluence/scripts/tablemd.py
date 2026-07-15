@@ -19,6 +19,10 @@ Shared by convert.py (v2) and fix_tables.py. Design rules:
   < -> xml); pre content is kept byte-exact (edge newlines trimmed);
 - Fallback (exception, caller keeps raw HTML and logs): colspan/rowspan > 1,
   nested tables, long/indented pre, empty table;
+- optional expand mode (table_to_gfm(..., expand_spans=True)): colspan/rowspan
+  no longer raise -- the grid is expanded: rowspan repeats the value on every
+  spanned row, colspan puts the value in the first column of the span and pads
+  the rest with "" (layout loss, never data loss);
 - empty attachment anchors (<a ...></a>): text from data-linked-resource-default-alias,
   else aria-label, else basename(href) -- fill_empty_anchors()/anchor_fallback_text().
 """
@@ -254,35 +258,65 @@ def cell_md(cell):
 
 
 # ---------------------------------------------------------------- table -> GFM
-def table_to_gfm(table, indent="", unroll_pre=False):
+def _span(cell, attr):
+    v = (cell.get(attr) or "").strip()
+    return int(v) if v.isdigit() and int(v) > 1 else 1
+
+
+def table_to_gfm(table, indent="", unroll_pre=False, expand_spans=False):
     """lxml <table> element -> GFM pipe table (string). Raises Fallback when a
     lossless conversion is impossible (caller keeps the raw HTML and logs).
     unroll_pre=True: multiline-pre cells no longer raise -- each becomes
     "см. Пример N ниже" and the code bodies are appended after the table as
-    bold-labelled fenced blocks (see module docstring)."""
+    bold-labelled fenced blocks (see module docstring).
+    expand_spans=True: colspan/rowspan cells no longer raise -- rowspan repeats
+    the value on every spanned row, colspan pads the span with "" cells."""
     global _unroll
     if table.xpath(".//table"):
         raise Fallback("nested-table")
-    for c in table.xpath(".//td | .//th"):
-        for attr in ("colspan", "rowspan"):
-            v = (c.get(attr) or "").strip()
-            if v and v != "1":
-                raise Fallback("colspan-rowspan")
+    if not expand_spans:
+        for c in table.xpath(".//td | .//th"):
+            for attr in ("colspan", "rowspan"):
+                v = (c.get(attr) or "").strip()
+                if v and v != "1":
+                    raise Fallback("colspan-rowspan")
     _unroll = [] if unroll_pre else None
     try:
         rows = []                                # (cells:list[str], all_th, in_thead)
+        pending = {}     # col -> [rows_left, text]: open rowspans (expand_spans)
         for tr in table.iter("tr"):
             cells = [c for c in tr if c.tag in ("td", "th")]
-            if not cells:
+            if not cells and not pending:
                 continue
-            row_cells = []
-            for ci, c in enumerate(cells):
+            row_cells, col, queue = [], 0, list(cells)
+            while queue or (pending and col <= max(pending)):
+                if col in pending:               # cell continued from a rowspan
+                    rem = pending[col]
+                    row_cells.append(rem[1])
+                    rem[0] -= 1
+                    if rem[0] <= 0:
+                        del pending[col]
+                    col += 1
+                    continue
+                if not queue:                    # gap before a trailing rowspan
+                    row_cells.append("")
+                    col += 1
+                    continue
+                c = queue.pop(0)
                 k = len(_unroll) if _unroll is not None else 0
-                row_cells.append(cell_md(c))
+                txt = cell_md(c)
                 if _unroll is not None:          # bind fresh examples to a cell
                     for e in _unroll[k:]:
-                        e["row"], e["col"] = len(rows), ci
-            rows.append((row_cells, all(c.tag == "th" for c in cells),
+                        e["row"], e["col"] = len(rows), col
+                cs, rs = _span(c, "colspan"), _span(c, "rowspan")
+                for i in range(cs):              # value in first col of the span
+                    row_cells.append(txt if i == 0 else "")
+                    if rs > 1:
+                        pending[col + i] = [rs - 1, txt if i == 0 else ""]
+                col += cs
+            if not row_cells:
+                continue
+            rows.append((row_cells, bool(cells) and all(c.tag == "th" for c in cells),
                          bool(tr.xpath("ancestor::thead"))))
         if not rows:
             raise Fallback("empty-table")

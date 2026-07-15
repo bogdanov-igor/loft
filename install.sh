@@ -135,8 +135,12 @@ selfcheck_fail() { echo "loft: САМОПРОВЕРКА ПРОВАЛЕНА — $
 [ -x "$DEST/.claude/hooks/leak-guard.sh" ] && [ -x "$DEST/.claude/hooks/update-check.sh" ] \
   || selfcheck_fail "хуки не исполняемые"
 [ "$(ls "$DEST/.claude/skills" | wc -l | tr -d ' ')" -ge 14 ] || selfcheck_fail "скиллов меньше 14"
-( cd "$DEST" && python3 .claude/skills/link-check/scripts/link_check.py spec >/dev/null 2>&1 ) \
-  || selfcheck_fail "link_check не отрабатывает"
+# проверяем, что скрипт РАБОТАЕТ, на пустой площадке: на живом проекте
+# link_check честно выходит с кодом 1 при битых ссылках — это не поломка
+SCTMP="$(mktemp -d)"
+( cd "$DEST" && python3 .claude/skills/link-check/scripts/link_check.py "$SCTMP" >/dev/null 2>&1 ) \
+  || { rmdir "$SCTMP" 2>/dev/null; selfcheck_fail "link_check не отрабатывает"; }
+rmdir "$SCTMP" 2>/dev/null
 echo "loft: самопроверка установки — OK"
 
 echo "loft $(cat "$SRC/VERSION") установлен в $DEST"
