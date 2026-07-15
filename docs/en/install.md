@@ -8,8 +8,8 @@
 - Optional: `pandoc` + `lxml`, needed only by the `ingest-confluence` and
   `ingest-docs` skills
 
-Loft itself requires **no runtime services**: no MCP server, no daemon, no
-index to build. The kernel is markdown plus a few deterministic scripts.
+Loft needs no runtime services: no MCP server, no daemon, no index to build.
+The kernel is markdown plus a few deterministic scripts.
 
 ## Quickstart
 
@@ -22,17 +22,17 @@ project folder.
 > Install loft from the archive in this folder: verify the sha256, unpack it,
 > run `loft/install.sh`, then tell me what it set up.
 
-**3.** If the project ran specos before, say:
+**3.** If the project ran specos before, add:
 
 > Clean up the specos leftovers and propose the re-audit.
 
-That is the whole installation. Claude verifies the checksum, unpacks,
-installs, and reports; the cleanup step quarantines the predecessor's
-machinery (deleting nothing) — see [migration](migration.md).
+Claude verifies the checksum, unpacks, installs and reports. The cleanup step
+quarantines the predecessor's machinery without deleting anything — see
+[migration](migration.md).
 
 ## By hand
 
-The same two paths, typed yourself. They run the same installer.
+Two paths, both running the same installer.
 
 ### From the archive
 
@@ -45,8 +45,8 @@ tar -xzf loft_1.1.0.tgz
 bash loft/install.sh                # no argument = install into this directory
 ```
 
-The unpacked `loft/` folder can stay in the project — the update check will
-use it, and re-running `install.sh` updates the kernel — or be deleted. If it
+The unpacked `loft/` folder can stay in the project (the update check will
+use it, and re-running `install.sh` updates the kernel) or be deleted. If it
 stays, add `loft/` and the `.tgz` to `.gitignore`.
 
 ### From the source repo
@@ -60,14 +60,14 @@ bash loft/install.sh /path/to/project
 
 | Action | Detail |
 |---|---|
-| Installs the kernel | Copies `bundle/.claude` in as a real directory (never a symlink — symlinks break hook path resolution and per-project isolation). An existing `.claude` is moved to `.claude.bak.<timestamp>` first. |
+| Installs the kernel | Copies `bundle/.claude` in as a real directory, never a symlink — symlinks break hook path resolution and per-project isolation. An existing `.claude` is moved to `.claude.bak.<timestamp>` first. |
 | Stamps the version | Writes `.claude/VERSION`, which the update check reads. |
-| Preserves your skills and agents | Skill directories and agent files the kernel does not ship are carried over from the previous `.claude`. Exception: a specos-managed `.claude` — its own skills and agents are recognized by the specos wire lists and stay in the backup, so the predecessor's machinery does not ride back in. |
-| Seeds project state | Creates `memory/` (with `lessons/antipatterns/patterns/structures`), `stages/`, `spec/`, `inbox/`, `BACKLOG.md`, `QUESTIONS.md`, `memory/MEMORY.md` — **only where absent**. Existing project state is never overwritten. |
+| Preserves your skills and agents | Skill directories and agent files the kernel does not ship are carried over from the previous `.claude`. Exception: in a specos-managed `.claude`, specos' own skills and agents are recognized by its wire lists and stay in the backup, so the predecessor's machinery does not ride back in. |
+| Seeds project state | Creates `memory/` (with `lessons/antipatterns/patterns/structures`), `stages/`, `spec/`, `inbox/`, `BACKLOG.md`, `QUESTIONS.md`, `memory/MEMORY.md` — only where absent. Existing project state is never overwritten. |
 | Protects secrets | Adds `.secrets.env` to `.gitignore`. |
-| Refuses the MCP tax | A specos-era `.mcp.json` (serena + playwright + memory ≈ 20–30k tokens of schemas per session) is moved to backup — your own servers, if any, you restore by hand. Any other `.mcp.json` is left as is, with a reminder that every server costs schema tokens in every session. |
-| Detects residue | Runs the migration sweep in preview mode and reports specos/skillforge machinery, pointing at the `migrate-specos` skill. **It moves nothing** — an installer does not touch your files. |
-| Self-checks | Verifies the contract is present, hooks are executable, the skill count is right, and `link_check` actually runs — and fails loudly rather than hand over a broken kernel. |
+| Drops the MCP tax | A specos-era `.mcp.json` (serena + playwright + memory ≈ 20–30k tokens of schemas per session) is moved to backup; your own servers, if any, you restore by hand. Any other `.mcp.json` is left as is, with a reminder that every server costs schema tokens in every session. |
+| Detects residue | Runs the migration sweep in preview mode and reports specos/skillforge machinery, pointing at the `migrate-specos` skill. It moves nothing itself. |
+| Self-checks | Verifies the contract is present, hooks are executable, the skill count is right, and `link_check` actually runs. On failure it says so loudly instead of handing over a broken kernel. |
 
 ## Updating
 
@@ -84,7 +84,7 @@ bash loft/install.sh
 ```
 
 Kernel files are replaced. Project state — wiki, specs, memory, stages,
-backlog, questions, your own skills and agents — is never touched. Old
+backlog, questions, your own skills and agents — is not touched. Old
 `.claude.bak.*` backups can be pruned freely.
 
 ### How you learn an update exists
@@ -92,12 +92,12 @@ backlog, questions, your own skills and agents — is never touched. Old
 A `SessionStart` hook compares `.claude/VERSION` against every source it can
 see — a loft distribution lying nearby (the `loft/` folder in the project, or
 `$LOFT_HOME`) and the latest [GitHub release](https://github.com/bogdanov-igor/loft/releases)
-— and prints **one line** when something is strictly newer. When you are
-current it prints nothing at all, so the normal case costs zero tokens.
+— and prints one line when something is strictly newer. When you are current
+it prints nothing, so the normal case costs zero tokens.
 
-The GitHub lookup is polite: cached for 24 hours, a hard 3-second ceiling so a
-slow network never delays a session, and every failure path exits silently.
-Opt out entirely with `LOFT_NO_UPDATE_CHECK=1`. It can never block a session.
+The GitHub lookup is cached for 24 hours and has a hard 3-second ceiling, so
+a slow network never delays a session; every failure path exits silently. Opt
+out entirely with `LOFT_NO_UPDATE_CHECK=1`. The check cannot block a session.
 
 ## Building the archive (maintainers)
 
@@ -106,7 +106,7 @@ bash build-archive.sh    # → dist/loft_<version>.tgz + .sha256
 ```
 
 `build-archive.sh` is not shipped inside the archive. It runs `test/run.sh`
-first — 40+ self-tests over the kernel's scripts, offline, on throwaway
+first — 48 self-tests over the kernel's scripts, offline, on throwaway
 fixtures — and refuses to build if anything fails. It then unpacks the archive
 it just built into a temp directory and performs a real install to verify the
 result end to end.
