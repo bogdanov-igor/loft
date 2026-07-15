@@ -1,31 +1,63 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fix_tables v1 -- postprocessor for ALREADY converted .md pages (no source HTML).
+fix_tables v2 -- postprocessor for ALREADY converted .md pages (no source HTML).
 
-Does exactly two things, everything else stays byte-for-byte:
-1. raw Confluence HTML <table> blocks (line starts with optional indent +
-   "<table", ends at the balanced "</table>") -> GFM pipe tables via tablemd;
-   fallback (kept as raw HTML, logged): colspan/rowspan, nested tables,
-   long/indented <pre> in cells. Junk lines adjacent to a REPLACED block
-   (blank runs, lone "\\" from <br/>) are collapsed to one blank line.
+Brings an old wiki to what convert.py v2.1 would produce today; everything
+else stays byte-for-byte, code fences and inline `code` are never touched:
+1. decorative icon <img> (jira viewavatar/useravatar, emoticons, images/icons)
+   are dropped -- they pin pages to a live tracker and render as broken images;
 2. empty attachment anchors <a ...></a> get visible text:
    data-linked-resource-default-alias -> aria-label -> basename(href)
-   (applied inside tables and standalone; code fences are never touched).
+   (applied inside tables and standalone; runs BEFORE the attribute scrub);
+3. HTML anchors: in flow text a tag-free <a href>text</a> becomes markdown --
+   href to *.md -> [[basename|text]], href to attachments/assets ->
+   [[flat|text]], anything else -> [text](url) (or <url> when text == url);
+   anchors inside raw <table> blocks (Obsidian can't parse wikilinks there)
+   and anchors with nested tags only get their attributes scrubbed;
+4. attribute scrub on remaining raw-HTML opening tags (whitelist per tag,
+   same as convert.py clean_dom): class/style/rel/data-*/aria-* noise from
+   Confluence exports disappears, <td colspan>, <img src alt width height>,
+   <pre|code class> survive;
+5. raw Confluence HTML <table> blocks -> GFM pipe tables via tablemd;
+   fallback (kept as raw HTML, logged): colspan/rowspan (unless
+   --expand-spans), nested tables, long/indented <pre> in cells. Junk lines
+   adjacent to a REPLACED block (blank runs, lone "\\" from <br/>) are
+   collapsed to one blank line.
 
 Idempotent: a second run changes 0 files.
-CLI: python3 fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre]
---unroll-pre: multiline-pre таблицы не остаются HTML, а разворачиваются —
+CLI: python3 fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre] [--expand-spans]
+--unroll-pre: multiline-pre таблицы не остаются HTML, а разворачиваются --
 ячейка получает «см. Пример N ниже», код выносится фенсами после таблицы.
+--expand-spans: colspan/rowspan таблицы не остаются HTML -- rowspan повторяет
+значение на каждой строке, colspan дополняет пропуски пустыми ячейками.
 """
 import os, re, sys, html
+import urllib.parse
 import lxml.html
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tablemd
 
-UNROLL = False   # --unroll-pre: см. docstring
+UNROLL = False        # --unroll-pre: см. docstring
+EXPAND = False        # --expand-spans: см. docstring
 
 S_MARK, E_MARK = "\x00TBL\x00", "\x00/TBL\x00"
+
+# attribute scrub whitelist -- keep in sync with convert.py KEEP_ATTRS
+KEEP_ATTRS = {
+    "a": ("href", "title"), "img": ("src", "alt", "width", "height"),
+    "td": ("colspan", "rowspan"), "th": ("colspan", "rowspan"),
+    "pre": ("class",), "code": ("class",),
+    "table": (), "tbody": (), "thead": (), "tr": (), "p": (), "br": (),
+    "strong": (), "em": (), "b": (), "i": (), "u": (), "s": (), "del": (),
+    "ul": (), "ol": (), "li": (), "span": (), "div": (), "blockquote": (),
+    "h1": (), "h2": (), "h3": (), "h4": (), "h5": (), "h6": (),
+}
+ICON_SRC = re.compile(r"viewavatar|useravatar|/images/emoticons/|images/icons/")
+# (?<!\\): an escaped literal like "\<b\>" in cell text is NOT markup
+OPEN_TAG = re.compile(r"(?<!\\)<([a-zA-Z][a-zA-Z0-9]*)((?:\s[^<>]*?)?)(/?)>")
+A_SIMPLE = re.compile(r"(?<!\\)<a\b[^<>]*>([^<>]*)</a>")   # tag-free inner, one line
+CODE_SPAN = re.compile(r"`+[^`]*`+")
 
 
 def fence_spans(text):
@@ -42,6 +74,28 @@ def fence_spans(text):
     if in_fence:                                  # unclosed fence -> protect to EOF
         spans.append((start, len(text)))
     return spans
+
+
+def fence_lines(lines):
+    """Line indexes inside ``` / ~~~ fences (incl. the fence lines)."""
+    masked, in_f = set(), False
+    for i, l in enumerate(lines):
+        if re.match(r"^[ \t]*(```|~~~)", l):
+            masked.add(i); in_f = not in_f
+        elif in_f:
+            masked.add(i)
+    return masked
+
+
+def sub_outside_code(line, fn):
+    """Apply fn(segment)->segment to the parts of a line outside `code spans`."""
+    out, pos = [], 0
+    for m in CODE_SPAN.finditer(line):
+        out.append(fn(line[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(fn(line[pos:]))
+    return "".join(out)
 
 
 def fix_empty_anchors_text(text):
@@ -67,6 +121,137 @@ def fix_empty_anchors_text(text):
     return re.sub(r"<a\b[^>]*></a>", sub, text)
 
 
+# ---------------------------------------------------------------- anchors/imgs
+def drop_icon_imgs(text):
+    """Remove decorative avatar/emoticon <img> tags (jira macro icons)."""
+    lines = text.split("\n")
+    masked = fence_lines(lines)
+
+    def seg(s):
+        def one(m):
+            sm = re.search(r'src="([^"]*)"', m.group(0))
+            return "" if sm and ICON_SRC.search(sm.group(1)) else m.group(0)
+        return re.sub(r"(?<!\\)<img\b[^<>]*/?>", one, s)
+
+    for i, l in enumerate(lines):
+        if i in masked or "<img" not in l:
+            continue
+        lines[i] = sub_outside_code(l, seg)
+    return "\n".join(lines)
+
+
+def _scrub_open_tags(segment):
+    """Whitelist-scrub attributes of raw-HTML opening tags in a text segment."""
+    def sub(m):
+        tag, attrs_s, selfc = m.group(1).lower(), m.group(2) or "", m.group(3)
+        keep = KEEP_ATTRS.get(tag)
+        if keep is None:                          # unknown tag -> not our HTML
+            return m.group(0)
+        attrs = dict(re.findall(r'([\w:-]+)="([^"]*)"', attrs_s))
+        kept = "".join(f' {k}="{attrs[k]}"' for k in keep if k in attrs)
+        return f"<{tag}{kept}{'/' if selfc else ''}>"
+    return OPEN_TAG.sub(sub, segment)
+
+
+def _anchor_to_md(inner, attrs_s, pipe_row):
+    """<a ...>inner</a> (tag-free inner) -> markdown, or None to keep HTML."""
+    hm = re.search(r'href="([^"]*)"', attrs_s)
+    if not hm:
+        return None
+    href = html.unescape(hm.group(1))
+    text = re.sub(r"\s+", " ", html.unescape(inner)).replace("\xa0", " ").strip()
+    if "|" in text or "]]" in text or "[[" in text:
+        return None                               # scrub-only is safer
+    scheme = re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href)
+    if not scheme and not href.startswith(("/", "#")):
+        path = urllib.parse.unquote(href.split("#")[0].split("?")[0])
+        base = os.path.basename(path)
+        sep = "\\|" if pipe_row else "|"
+        if base.endswith(".md"):                  # internal page -> wikilink
+            name = base[:-3]
+            if not text or text == name:
+                return f"[[{name}]]"
+            return f"[[{name}{sep}{text}]]"
+        if "attachments/" in path or "assets/" in path:
+            return f"[[{base}]]" if (not text or text == base) else f"[[{base}{sep}{text}]]"
+    url = tablemd.esc_url(href)
+    if not text or text == href:
+        return f"<{url}>"
+    if pipe_row:
+        text = text.replace("|", "\\|")
+    text = re.sub(r"([\\`*_\[\]<])", r"\\\1", text)
+    return f"[{text}]({url})"
+
+
+def clean_anchors(text):
+    """Flow anchors -> markdown; anchors in raw <table> blocks and anchors
+    with nested tags -> attribute scrub only. Raw-table element tags (td, p,
+    ...) are attribute-scrubbed too. Fences/inline code stay untouched."""
+    lines = text.split("\n")
+    masked = fence_lines(lines)
+    depth = 0
+    for i, l in enumerate(lines):
+        if i in masked:
+            continue
+        in_tbl = depth > 0 or "<table" in l
+        depth += len(re.findall(r"<table\b", l)) - l.count("</table>")
+        if depth < 0:
+            depth = 0
+        if "<" not in l:
+            continue
+        pipe_row = bool(re.match(r"^[ \t]*\|", l))
+
+        def seg(s):
+            if not in_tbl:                        # flow: try full conversion
+                def conv(m):
+                    am = re.match(r"<a\b((?:\s[^<>]*?)?)>", m.group(0))
+                    if not am:
+                        return m.group(0)
+                    md = _anchor_to_md(m.group(1), am.group(1), pipe_row)
+                    return md if md is not None else m.group(0)
+                s = A_SIMPLE.sub(conv, s)
+            if "<" in s:                          # leftovers: scrub attributes
+                s = _scrub_open_tags(s)
+            return s
+
+        lines[i] = sub_outside_code(l, seg)
+    return "\n".join(lines)
+
+
+MD_LINK_MD = re.compile(r"(?<!!)\[([^\]\n]*)\]\(([^)\s:]+\.md)(#[^)]*)?\)")
+
+def mdlinks_to_wikilinks(text):
+    """Relative [text](path.md) -> [[basename|text]] (corpus convention).
+    Fresh convert.py output has none; they appear when an old-wiki table with
+    internal links is converted (tablemd renders links as [text](href))."""
+    lines = text.split("\n")
+    masked = fence_lines(lines)
+    for i, l in enumerate(lines):
+        if i in masked or "](" not in l:
+            continue
+        pipe_row = bool(re.match(r"^[ \t]*\|", l))
+
+        def seg(s):
+            def sub(m):
+                text_in, path = m.group(1), m.group(2)
+                if path.startswith("/") or "]]" in text_in or "[[" in text_in:
+                    return m.group(0)
+                base = os.path.basename(urllib.parse.unquote(path))[:-3]
+                plain = text_in.replace("\\|", "|").strip()   # human alias text
+                if not plain or plain == base:
+                    return f"[[{base}]]"
+                if pipe_row:
+                    return f"[[{base}\\|{plain.replace('|', chr(92) + '|')}]]"
+                if "|" in plain:                  # would split [[target|alias]]
+                    return m.group(0)
+                return f"[[{base}|{plain}]]"
+            return MD_LINK_MD.sub(sub, s)
+
+        lines[i] = sub_outside_code(l, seg)
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- tables
 def convert_tables(text, relname, log):
     """Replace raw <table> blocks with GFM tables (markers first, cleanup after)."""
     spans = fence_spans(text)
@@ -94,7 +279,8 @@ def convert_tables(text, relname, log):
                 el = el.find(".//table")
             if el is None:
                 raise tablemd.Fallback("unparseable")
-            gfm = tablemd.table_to_gfm(el, indent=m.group(1), unroll_pre=UNROLL)
+            gfm = tablemd.table_to_gfm(el, indent=m.group(1), unroll_pre=UNROLL,
+                                       expand_spans=EXPAND)
         except tablemd.Fallback as fb:
             log.append((relname, fb.reason))
             continue
@@ -137,19 +323,23 @@ def _cleanup_markers(text):
 
 def process_file(path, relname, log):
     old = open(path, encoding="utf-8").read()
-    new = fix_empty_anchors_text(old)
+    new = drop_icon_imgs(old)
+    new = fix_empty_anchors_text(new)             # needs data-* attrs: before scrub
+    new = clean_anchors(new)
     new, n_tbl = convert_tables(new, relname, log)
+    new = mdlinks_to_wikilinks(new)
     return old, new, n_tbl
 
 
 def main():
-    global UNROLL
-    flags = ("--dry-run", "--unroll-pre")
+    global UNROLL, EXPAND
+    flags = ("--dry-run", "--unroll-pre", "--expand-spans")
     args = [a for a in sys.argv[1:] if a not in flags]
     dry = "--dry-run" in sys.argv[1:]
     UNROLL = "--unroll-pre" in sys.argv[1:]
+    EXPAND = "--expand-spans" in sys.argv[1:]
     if len(args) != 1:
-        sys.exit("usage: fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre]")
+        sys.exit("usage: fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre] [--expand-spans]")
     root = args[0]
     files = []
     if os.path.isfile(root):
@@ -159,9 +349,12 @@ def main():
         for dirpath, _, names in os.walk(root):
             files += [os.path.join(dirpath, n) for n in sorted(names) if n.endswith(".md")]
     log, n_changed, n_tables = [], 0, 0
+    n_wl_old = n_wl_new = 0                       # wikilink counters (sanity print)
     for f in sorted(files):
         rel = os.path.relpath(f, base)
         old, new, n_tbl = process_file(f, rel, log)
+        n_wl_old += len(re.findall(r"\[\[", old))
+        n_wl_new += len(re.findall(r"\[\[", new))
         if new != old:
             n_changed += 1
             n_tables += n_tbl
@@ -171,6 +364,7 @@ def main():
                 open(f, "w", encoding="utf-8").write(new)
     for rel, reason in log:
         print(f"[fallback] {rel}: {reason}")
+    print(f"[wikilinks] {n_wl_old} -> {n_wl_new}")
     print(f"[done] {n_changed}/{len(files)} files changed, {n_tables} tables converted, "
           f"{len(log)} fallbacks{' (dry-run)' if dry else ''}")
 

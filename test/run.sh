@@ -79,6 +79,22 @@ has "Запрос — Пример 1:" "$out" "unroll: заголовок при
 has '```json' "$out" "unroll: фенс с языком из class"
 has '"e": 5' "$out" "unroll: содержимое pre сохранено"
 hasnt "<table" "$out" "unroll: HTML не остался"
+out="$(python3 - "$SK/ingest-confluence/scripts" <<'EOF'
+import sys; sys.path.insert(0, sys.argv[1])
+from lxml import html as H
+import tablemd
+t = H.fragment_fromstring('''<table><tbody>
+<tr><th colspan="2">Шапка</th><th>С</th></tr>
+<tr><td rowspan="2">Блок</td><td>a1</td><td>a2</td></tr>
+<tr><td>b1</td><td>b2</td></tr>
+</tbody></table>''')
+print(tablemd.table_to_gfm(t, expand_spans=True))
+EOF
+)"
+has "| Шапка |  | С |" "$out" "expand-spans: colspan дополнен пустыми"
+has "| Блок | a1 | a2 |" "$out" "expand-spans: первая строка rowspan"
+has "| Блок | b1 | b2 |" "$out" "expand-spans: rowspan повторяет значение"
+hasnt "<table" "$out" "expand-spans: HTML не остался"
 
 # ── fix_tables: конверсия + идемпотентность + фенс-защита ───────────────────
 section "fix_tables — идемпотентность"
@@ -97,6 +113,40 @@ has "| А |" "$c1" "HTML-таблица стала GFM"
 has "в фенсе — не трогать" "$c1" "таблица в фенсе не тронута"
 out="$(python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F" 2>&1)"
 has "0/1 files changed" "$out" "второй прогон — ноль изменений"
+
+# ── fix_tables: чистка якорей, jira-иконки, скраб атрибутов ─────────────────
+section "fix_tables — якоря и атрибутный шлак"
+F2="$TMP/ft2"; mkdir -p "$F2"
+cat > "$F2/a.md" <<'EOF'
+Интро <a href="https://x.example/y" class="external-link" rel="nofollow">док</a> и <a href="../attachments/1_2.pdf" class="confluence-embedded-file" draggable="false">SV.pdf</a> и <a href="%D0%A1%D0%98-1.md">Регистрация</a>.
+Джира: <a href="https://jira.example/browse/OB-1?src=confmacro" class="jira-issue-key"><img src="https://jira.example/secure/viewavatar?size=xsmall"/>OB-1</a>
+Сам-себе-текст: <a href="https://conf.example/pages/viewpage.action?pageId=9" class="external-link">https://conf.example/pages/viewpage.action?pageId=9</a>
+<table class="confluenceTable" style="width: 100.0%;"><tbody><tr><td colspan="2" class="confluenceTd" style="text-align: center;"><a href="z.md" class="k" data-y="1">внутри</a></td></tr></tbody></table>
+Код не трогать: `<a href="x" class="y">код</a>`, экранированный \<b\> тоже.
+EOF
+cp "$F2/a.md" "$F2/.a.orig"; mv "$F2/.a.orig" "$TMP/a.orig"
+python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F2" >/dev/null 2>&1
+a="$(cat "$F2/a.md")"
+has "[док](https://x.example/y)" "$a" "внешний якорь стал markdown-ссылкой"
+has "[[1_2.pdf|SV.pdf]]" "$a" "якорь-вложение стал wikilink"
+has "[[СИ-1|Регистрация]]" "$a" "внутренний якорь стал wikilink (unquote)"
+has "[OB-1](https://jira.example/browse/OB-1?src=confmacro)" "$a" "jira-якорь стал markdown"
+hasnt "viewavatar" "$a" "jira-аватарка выпилена"
+has "<https://conf.example/pages/viewpage.action?pageId=9>" "$a" "текст==href -> автолинк"
+has '<td colspan="2"><a href="z.md">внутри</a></td>' "$a" "в таблице: атрибуты вычищены, colspan цел"
+has '`<a href="x" class="y">код</a>`' "$a" "инлайн-код не тронут"
+has 'экранированный \<b\>' "$a" "экранированный литерал не тронут"
+hasnt 'class="external-link"' "$a" "атрибутного шлака не осталось (кроме инлайн-кода)"
+hasnt 'confluenceTable' "$a" "конфлюенс-классы таблиц вычищены"
+out="$(python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F2" 2>&1)"
+has "0/1 files changed" "$out" "чистка якорей идемпотентна"
+F3="$TMP/ft3"; mkdir -p "$F3"; cp "$TMP/a.orig" "$F3/a.md"
+python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F3" --expand-spans >/dev/null 2>&1
+a3="$(cat "$F3/a.md")"
+has '| [[z\|внутри]] |  |' "$a3" "expand-spans: colspan-таблица развёрнута, ссылка — wikilink"
+hasnt "<table" "$a3" "expand-spans: HTML-таблиц не осталось"
+out="$(python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F3" --expand-spans 2>&1)"
+has "0/1 files changed" "$out" "expand-spans идемпотентен"
 
 # ── sweep: детект, карантин, неприкосновенность состояния ───────────────────
 section "migrate-specos sweep — карантин машинерии"
@@ -145,6 +195,20 @@ out="$(python3 "$CV" "$REPO/test/fixtures/export-v1" "$G/wiki" 2>&1)"
 has "pages written" "$out" "конвертация v1-фикстуры прошла"
 [ -f "$G/wiki/.ingest.json" ] && ok || bad ".ingest.json пишется с первого прогона"
 ls "$G/wiki/"_CHANGES-* >/dev/null 2>&1 && bad "_CHANGES не должен появляться при первой конвертации" || ok
+r="$(cat "$G/wiki/Раздел-101.md")"
+has "[[Удаляемая-103]]" "$r" "convert: внутренний якорь с атрибутами стал wikilink"
+has "[пример](https://example.com/d)" "$r" "convert: внешний якорь стал markdown"
+has "[[Переименуемая-104]]" "$r" "convert: автолинк с pageId резолвится в wikilink"
+has "[AB-1](" "$r" "convert: jira-макрос стал markdown-ссылкой"
+hasnt "viewavatar" "$r" "convert: jira-аватарка выпилена"
+hasnt 'class="external-link"' "$r" "convert: атрибутный шлак вычищен"
+has '<th colspan="2">Спан</th>' "$r" "convert: colspan-fallback остался HTML, но чистый"
+has "colspan-rowspan" "$out" "convert: fallback залогирован с причиной"
+GX="$TMP/golden-exp"
+python3 "$CV" "$REPO/test/fixtures/export-v1" "$GX/wiki" --expand-spans >/dev/null 2>&1
+rx="$(cat "$GX/wiki/Раздел-101.md")"
+has "| Спан |  |" "$rx" "convert --expand-spans: таблица развёрнута в GFM"
+hasnt "<table" "$rx" "convert --expand-spans: HTML-таблиц не осталось"
 echo "рукопись" > "$G/wiki/_NOTES.md"
 out="$(python3 "$CV" "$REPO/test/fixtures/export-v2" "$G/wiki" 2>&1)"
 has "[changes]" "$out" "diff посчитан при повторной конвертации"
@@ -199,6 +263,9 @@ echo custom > "$I1/.claude/agents/my-agent.md"; echo "- z" >> "$I1/BACKLOG.md"
 out="$(bash "$REPO/install.sh" "$I1" 2>&1)"
 [ -f "$I1/.claude/agents/my-agent.md" ] && grep -q "^- z" "$I1/BACKLOG.md" && ok || bad "обновление: агент и BACKLOG пережили"
 [ "$(cat "$I1/.claude/VERSION")" = "$(tr -d '[:space:]' < "$REPO/VERSION")" ] && ok || bad "версия проштампована"
+echo "Смотри [[нет-такой-страницы]]" > "$I1/spec/битая.md"
+out="$(bash "$REPO/install.sh" "$I1" 2>&1)"
+has "самопроверка установки — OK" "$out" "битая ссылка в spec проекта не валит установку"
 
 printf '\nитого: %d ok, %d fail\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
