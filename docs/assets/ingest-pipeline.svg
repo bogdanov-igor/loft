@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" font-family="'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d89a4a"/>
+    </marker>
+    <marker id="arr2m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#988b76"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="420" rx="10" fill="#0b0906"/>
+  <rect x="0.5" y="0.5" width="959" height="419" rx="10" fill="none" stroke="#3d2c14"/>
+
+  <text x="40" y="42" font-size="12" letter-spacing="4" fill="#988b76">INGEST-CONFLUENCE · DETERMINISTIC PIPELINE</text>
+
+  <!-- row 1 -->
+  <rect x="40" y="82" width="250" height="76" rx="6" fill="none" stroke="#5f4023" stroke-width="1.2"/>
+  <text x="56" y="110" font-size="13" fill="#f2e3c4" font-weight="bold">Confluence space export</text>
+  <text x="56" y="130" font-size="11" fill="#988b76">HTML pages + attachments</text>
+  <text x="56" y="146" font-size="11" fill="#988b76">snapshot date read from export</text>
+
+  <rect x="360" y="82" width="250" height="92" rx="6" fill="#3d2c14" stroke="#d89a4a" stroke-width="1.2"/>
+  <text x="376" y="110" font-size="13" fill="#fdf9f0" font-weight="bold">convert.py</text>
+  <text x="376" y="130" font-size="11" fill="#d9b586">pandoc + lxml · deterministic</text>
+  <text x="376" y="146" font-size="11" fill="#d9b586">no LLM touches the content</text>
+  <text x="376" y="164" font-size="10.5" fill="#988b76">--space · --base-url · --unroll-pre</text>
+
+  <rect x="680" y="82" width="240" height="76" rx="6" fill="none" stroke="#5f4023" stroke-width="1.2"/>
+  <text x="696" y="110" font-size="13" fill="#f2e3c4" font-weight="bold">wiki/</text>
+  <text x="696" y="130" font-size="11" fill="#988b76">*.md with [[wikilinks]]</text>
+  <text x="696" y="146" font-size="11" fill="#988b76">GFM tables · alias link names</text>
+
+  <line x1="290" y1="120" x2="360" y2="120" stroke="#d89a4a" stroke-width="1.2" marker-end="url(#arr2)"/>
+  <line x1="610" y1="120" x2="680" y2="120" stroke="#d89a4a" stroke-width="1.2" marker-end="url(#arr2)"/>
+
+  <!-- row 2 -->
+  <rect x="360" y="240" width="250" height="66" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="376" y="266" font-size="12.5" fill="#f2e3c4">conversion log</text>
+  <text x="376" y="286" font-size="11" fill="#988b76">tables kept as HTML are logged</text>
+  <text x="376" y="300" font-size="11" fill="#988b76">with a reason, never mangled</text>
+
+  <line x1="485" y1="174" x2="485" y2="240" stroke="#988b76" stroke-width="1" marker-end="url(#arr2m)"/>
+
+  <rect x="680" y="240" width="240" height="66" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="696" y="266" font-size="12.5" fill="#f2e3c4">change report</text>
+  <text x="696" y="286" font-size="11" fill="#988b76">_CHANGES-&lt;date&gt;.md — people</text>
+  <text x="696" y="300" font-size="11" fill="#988b76">.ingest.json — machines</text>
+
+  <line x1="800" y1="158" x2="800" y2="240" stroke="#988b76" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arr2m)"/>
+  <text x="812" y="205" font-size="10.5" fill="#988b76">on re-ingest</text>
+
+  <rect x="40" y="240" width="250" height="66" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="56" y="266" font-size="12.5" fill="#f2e3c4">fix_tables.py</text>
+  <text x="56" y="286" font-size="11" fill="#988b76">upgrades v1-converted wikis</text>
+  <text x="56" y="300" font-size="11" fill="#988b76">in place · idempotent</text>
+
+  <path d="M290,262 C480,220 600,180 678,152" fill="none" stroke="#988b76" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arr2m)"/>
+
+  <!-- stats -->
+  <line x1="40" y1="346" x2="920" y2="346" stroke="#3d2c14"/>
+  <text x="40" y="376" font-size="11.5" fill="#d9b586">field run: 446 pages · 468/609 raw HTML tables to clean GFM · 0 empty links · 0 broken links out of 3,645</text>
+  <text x="40" y="395" font-size="11" fill="#988b76">stale pages removed on re-ingest · files without confluence_id are never touched</text>
+</svg>
