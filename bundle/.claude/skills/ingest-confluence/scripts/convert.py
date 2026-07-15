@@ -45,12 +45,17 @@ _ap.add_argument("--base-url", default="",
 _ap.add_argument("--unroll-pre", action="store_true",
                  help="multiline <pre> in table cells -> 'см. Пример N ниже' + "
                       "fenced code blocks after the table (no multiline-pre fallback)")
+_ap.add_argument("--expand-spans", action="store_true",
+                 help="tables with colspan/rowspan -> GFM anyway: rowspan "
+                      "repeats the value, colspan pads with empty cells "
+                      "(no colspan-rowspan fallback)")
 _args = _ap.parse_args()
 SRC = _args.src
 OUT = _args.out
 SPACE = _args.space or os.path.basename(os.path.normpath(SRC))
 BASE_URL = _args.base_url.rstrip("/")
 UNROLL_PRE = _args.unroll_pre
+EXPAND_SPANS = _args.expand_spans
 LIMIT = int(os.environ.get("LIMIT", "0"))             # 0 = all
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))  # ids to convert
 VIEW = BASE_URL + "/pages/viewpage.action?pageId={id}" if BASE_URL else ""
@@ -186,6 +191,12 @@ INFO_STYLE = {
     "note": ("📝", "Заметка"), "warning": ("⚠️", "Внимание"),
 }
 LOZENGE_EMOJI = {"error": "🔴", "success": "🟢", "moved": "🟡", "current": "🔵", "complete": "🟢", "": "⚪"}
+KEEP_ATTRS = {   # clean_dom 6c: everything not whitelisted is scrubbed
+    "a": ("href", "title"),                      # title survives in [t](u "title")
+    "img": ("src", "alt", "width", "height"),
+    "td": ("colspan", "rowspan"), "th": ("colspan", "rowspan"),
+    "pre": ("class",), "code": ("class",),       # language-... for fences
+}
 
 def E(tag, text=None):
     el = etree.Element(tag)
@@ -325,9 +336,12 @@ def clean_dom(content, ctx):
     for img in content.xpath(".//img"):
         src = img.get("src", "") or ""
         alt = img.get("alt") or img.get("data-linked-resource-default-alias") or ""
-        # drop decorative confluence icons and generic file/code placeholders
+        # drop decorative confluence icons and generic file/code placeholders,
+        # incl. jira-macro avatars (external <img> that pins pages to the tracker)
         if (src.startswith("images/icons") or src.startswith("plugins/servlet")
-                or "placeholder-" in os.path.basename(src)):
+                or "placeholder-" in os.path.basename(src)
+                or "viewavatar" in src or "useravatar" in src
+                or "/images/emoticons/" in src):
             img.getparent().remove(img); continue
         new_src = None
         if src.startswith("attachments/"):
@@ -372,6 +386,19 @@ def clean_dom(content, ctx):
     # 6b. empty attachment anchors (file-card macro): put the filename inside,
     #     BEFORE pandoc -- applies both inside tables and in flow text.
     tablemd.fill_empty_anchors(content)
+    # 6c. attribute scrub (whitelist per tag). Confluence hangs class/style/
+    #     rel/data-* on everything; pandoc keeps ANY attributed inline element
+    #     as raw HTML, so flow links stayed <a class=...> instead of becoming
+    #     [text](url) -> [[wikilinks]]. Fallback tables also serialize cleaner.
+    #     Must run AFTER all class-driven macro handling and 6b (fill_empty_
+    #     anchors reads data-linked-resource-default-alias/aria-label).
+    for el in content.iter():
+        if not isinstance(el.tag, str):
+            continue
+        keep = KEEP_ATTRS.get(el.tag, ())
+        for k in list(el.attrib):
+            if k not in keep:
+                del el.attrib[k]
     # 7. drop all remaining Confluence wrapper tags (table-wrap, code panel,
     #    wiki-content, citation/font spans...) keeping their text & children.
     etree.strip_tags(content, "div", "span", "font")
@@ -460,7 +487,8 @@ def convert_body(content, page="", fallbacks=None):
     md = pandoc_html(inner_html(content))
     for i, t in enumerate(saved):
         try:
-            tmd = tablemd.table_to_gfm(t, unroll_pre=UNROLL_PRE)
+            tmd = tablemd.table_to_gfm(t, unroll_pre=UNROLL_PRE,
+                                       expand_spans=EXPAND_SPANS)
         except tablemd.Fallback as fb:
             print(f"[table-fallback] {page}: {fb.reason}")
             if fallbacks is not None:
@@ -572,6 +600,24 @@ def post_process(md, rec, pages, href2id, ctx):
             return f"![[{flat}]]" if flat.lower().endswith(IMG_EXT) else f"[[{flat}|{text or flat}]]"
         return m.group(0)
     md = re.sub(r"(?<!!)\[" + LINKTEXT + r"\]\(((?:https?:|/)[^)\s]+)\)", md_conf, md)
+    # autolinks <url>: pandoc emits them for <a href="X">X</a> (text == href);
+    # resolve confluence targets like md_conf does. Fence-aware: a literal
+    # <http://...> inside example code must stay untouched.
+    def auto_conf(m):
+        kind = resolve_confluence(m.group(1), ctx)
+        if kind[0] == "page":
+            return f"[[{pages[kind[1]]['basename']}]]"
+        if kind[0] == "file":
+            flat = register(kind[1], ctx)
+            return f"![[{flat}]]" if flat.lower().endswith(IMG_EXT) else f"[[{flat}|{flat}]]"
+        return m.group(0)
+    lines, in_fence = md.split("\n"), False
+    for i, l in enumerate(lines):
+        if re.match(r"^[ \t]*(```|~~~)", l):
+            in_fence = not in_fence
+        elif not in_fence:
+            lines[i] = re.sub(r"<(https?://[^>\s]+)>", auto_conf, l)
+    md = "\n".join(lines)
     # --- raw HTML left inside complex tables: rewrite refs to relative paths ---
     # (Obsidian/Foam don't parse [[..]]/![[..]] inside raw <table> blocks, but DO
     #  render <img src> and <a href> with note-relative paths.)

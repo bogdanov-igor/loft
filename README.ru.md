@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-d89a4a?style=flat-square" alt="версия 1.1.0">
+  <img src="https://img.shields.io/badge/version-1.2.0-d89a4a?style=flat-square" alt="версия 1.2.0">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
-  <img src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-204%20KB%20%C2%B7%2029%20%D1%84%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2-success?style=flat-square" alt="204 КБ, 29 файлов">
+  <img src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-220%20KB%20%C2%B7%2029%20%D1%84%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2-success?style=flat-square" alt="220 КБ, 29 файлов">
   <img src="https://img.shields.io/badge/%D1%81%D0%BA%D0%B8%D0%BB%D0%BB%D0%BE%D0%B2-14-success?style=flat-square" alt="14 скиллов">
   <img src="https://img.shields.io/badge/%D1%81%D0%B5%D1%80%D0%B2%D0%B8%D1%81%D0%BE%D0%B2%20%D0%B2%20%D1%80%D0%B0%D0%BD%D1%82%D0%B0%D0%B9%D0%BC%D0%B5-0-success?style=flat-square" alt="ноль сервисов в рантайме">
   <img src="https://img.shields.io/badge/%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82-81%20%D1%81%D1%82%D1%80%D0%BE%D0%BA-success?style=flat-square" alt="контракт 81 строка">
@@ -22,9 +22,9 @@ Loft — небольшое ядро для документной работы 
 системного/бизнес-аналитика: писать ТЗ, вести wiki-зеркало Confluence,
 аудировать корпус документации. Всего остального в нём сознательно нет.
 
-Название продолжает [Keel](https://github.com/bogdanov-igor/keel) — соседнее
-ядро того же автора, только для продуктовой разработки, а не для документов.
-У них общая раскладка, общий подход к установке и почти вся обвязка.
+Название продолжает [Keel](https://github.com/bogdanov-igor/keel) — моё ядро
+для продуктовой разработки. У них общая раскладка, общий подход к установке
+и почти вся обвязка; это — для документной работы.
 
 Loft пришёл на смену specos — систему я закопал в июне 2026, когда наконец
 разобрался, почему она «тупела» на обычной markdown-работе. Контекст съедала
@@ -38,7 +38,7 @@ Loft пришёл на смену specos — систему я закопал в
 
 ## Быстрый старт
 
-**1.** Скачайте `loft_1.1.0.tgz` и `loft_1.1.0.tgz.sha256` из
+**1.** Скачайте `loft_1.2.0.tgz` и `loft_1.2.0.tgz.sha256` из
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) в папку
 проекта.
 
@@ -59,8 +59,8 @@ Claude сверит контрольную сумму, распакует, по�
 
 ```sh
 cd /path/to/project                    # сюда скопированы tgz + .sha256
-shasum -c loft_1.1.0.tgz.sha256        # сначала целостность: ждём "OK"
-tar -xzf loft_1.1.0.tgz
+shasum -c loft_1.2.0.tgz.sha256        # сначала целостность: ждём "OK"
+tar -xzf loft_1.2.0.tgz
 bash loft/install.sh                   # без аргумента = ставим прямо здесь
 ```
 
@@ -143,6 +143,13 @@ lxml); LLM к содержимому по дороге не прикасаетс
   wiki, сконвертированные v1.
 - С `--unroll-pre` таблицы с многострочными JSON/XML-примерами становятся
   чистым GFM, а код выносится под таблицу фенсами — байт-в-байт.
+  С `--expand-spans` таблицы с объединёнными ячейками (colspan/rowspan)
+  тоже становятся GFM: rowspan повторяет значение, colspan дополняет
+  пустыми ячейками — потеря вёрстки, не данных.
+- Атрибутный шлак Confluence (`class`/`style`/`rel`/`data-*`) чистится до
+  pandoc, поэтому ссылки выходят как `[текст](url)` → `[[wikilinks]]`, а не
+  сырым `<a class=...>`; jira-аватарки и эмотиконы выпиливаются.
+  `fix_tables.py` применяет ту же чистку к уже сконвертированным wiki.
 
 Цифры с корпуса, на котором конвертер и делался, — рабочая wiki на 446
 страниц: 468 из 609 сырых HTML-таблиц ушли в чистый GFM (остальные —
@@ -162,7 +169,7 @@ lxml); LLM к содержимому по дороге не прикасаетс
 
 ## Тесты
 
-`test/run.sh` гоняет 48 самотестов по скриптам ядра: `link_check`, писатель
+`test/run.sh` гоняет 77 самотестов по скриптам ядра: `link_check`, писатель
 таблиц, идемпотентность `fix_tables`, миграционный sweep, проверка обновлений
 и сценарии инсталлера — всё офлайн, на одноразовых фикстурах.
 `build-archive.sh` использует их как релизный гейт, а потом делает настоящую
