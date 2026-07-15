@@ -39,7 +39,7 @@ fail() { echo "loft: самотест архива ПРОВАЛЕН — $1 (пл
                                                      || fail "хуки не исполняемые"
 [ -x "$T/.claude/skills/migrate-specos/sweep.sh" ]   || fail "sweep не исполняемый"
 [ "$(cat "$T/.claude/VERSION")" = "$VER" ]           || fail "версия не проштампована"
-[ "$(ls "$T/.claude/skills" | wc -l | tr -d ' ')" -ge 13 ] || fail "скиллов меньше 13"
+[ "$(ls "$T/.claude/skills" | wc -l | tr -d ' ')" -ge 14 ] || fail "скиллов меньше 14"
 out="$(cd "$T" && CLAUDE_PROJECT_DIR="$T" bash .claude/hooks/update-check.sh 2>/dev/null || true)"
 case "$out" in *"доступна версия"*) fail "update-check шумит на собственной версии" ;; esac
 [ -f "$T/.claude/skills/ingest-confluence/scripts/convert.py" ] || fail "нет конвертера"

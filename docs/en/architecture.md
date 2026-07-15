@@ -69,7 +69,7 @@ ceremony on small work is pure tax, paid in context.
 
 ## Skills
 
-13 markdown procedures under `.claude/skills/`, lazy-loaded — a skill costs
+14 markdown procedures under `.claude/skills/`, lazy-loaded — a skill costs
 nothing until it is used.
 
 **Spec work:**

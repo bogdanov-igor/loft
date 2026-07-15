@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-d89a4a?style=flat-square" alt="версия 1.0.0">
+  <img src="https://img.shields.io/badge/version-1.1.0-d89a4a?style=flat-square" alt="версия 1.1.0">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
-  <img src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-180%20KB%20%C2%B7%2027%20%D1%84%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2-success?style=flat-square" alt="180 КБ, 27 файлов">
-  <img src="https://img.shields.io/badge/%D1%81%D0%BA%D0%B8%D0%BB%D0%BB%D0%BE%D0%B2-13-success?style=flat-square" alt="13 скиллов">
+  <img src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-204%20KB%20%C2%B7%2029%20%D1%84%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2-success?style=flat-square" alt="204 КБ, 29 файлов">
+  <img src="https://img.shields.io/badge/%D1%81%D0%BA%D0%B8%D0%BB%D0%BB%D0%BE%D0%B2-14-success?style=flat-square" alt="14 скиллов">
   <img src="https://img.shields.io/badge/%D1%81%D0%B5%D1%80%D0%B2%D0%B8%D1%81%D0%BE%D0%B2%20%D0%B2%20%D1%80%D0%B0%D0%BD%D1%82%D0%B0%D0%B9%D0%BC%D0%B5-0-success?style=flat-square" alt="ноль сервисов в рантайме">
   <img src="https://img.shields.io/badge/%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82-81%20%D1%81%D1%82%D1%80%D0%BE%D0%BA-success?style=flat-square" alt="контракт 81 строка">
 </p>
@@ -40,7 +40,7 @@ Loft — преемник **specos**, похороненного в июне 202
 
 ## Быстрый старт
 
-**1.** Скачайте `loft_1.0.0.tgz` и `loft_1.0.0.tgz.sha256` из
+**1.** Скачайте `loft_1.1.0.tgz` и `loft_1.1.0.tgz.sha256` из
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) в папку
 проекта.
 
@@ -61,8 +61,8 @@ Loft — преемник **specos**, похороненного в июне 202
 
 ```sh
 cd /path/to/project                    # сюда скопированы tgz + .sha256
-shasum -c loft_1.0.0.tgz.sha256        # сначала целостность: ждём "OK"
-tar -xzf loft_1.0.0.tgz
+shasum -c loft_1.1.0.tgz.sha256        # сначала целостность: ждём "OK"
+tar -xzf loft_1.1.0.tgz
 bash loft/install.sh                   # без аргумента = ставим прямо здесь
 ```
 
@@ -87,9 +87,9 @@ bash loft/install.sh                   # без аргумента = стави�
   только при использовании. Правило профессии — прямо в контракте: **ни
   одного выдуманного факта** — каждое утверждение либо выводимо из
   источника, либо явно помечено как допущение или вопрос.
-- **13 скиллов с ленивой загрузкой** — работа с ТЗ (`tz-write`, `tz-adapt`,
+- **14 скиллов с ленивой загрузкой** — работа с ТЗ (`tz-write`, `tz-adapt`,
   `tz-audit`, `tz-elicit` с банками вопросов по 6 типам задач), работа с
-  корпусом (`ingest-confluence`, `ingest-docs`, `review-intake`, `link-check`) и процесс
+  корпусом (`ingest-confluence`, `ingest-docs`, `review-intake`, `link-check`, `knowledge-map`) и процесс
   (`spec-bootstrap`, `deliver-pdf`, `remember`, `stage`, `migrate-specos`).
 - **2 сабагента** — `scout` (читает большие пачки страниц, не загрязняя
   главное окно) и `verifier` (независимая приёмка документов со свежим
@@ -143,6 +143,8 @@ LLM не переписывает по дороге ни одного факта
 - `--space` и `--base-url` обобщают конвертер на любой спейс; дата снапшота
   берётся из самой выгрузки. Идемпотентный постпроцессор (`fix_tables.py`)
   дотягивает wiki, сконвертированные v1, на месте.
+- Опциональный `--unroll-pre`: таблицы с многострочными JSON/XML-примерами
+  становятся чистым GFM, код выносится под таблицу фенсами — байт-в-байт.
 
 Доказано на реальном рабочем корпусе в **446 страниц**: 468 из 609 сырых
 HTML-таблиц ушли в чистый GFM (остальные — логированные fallback'и, почти

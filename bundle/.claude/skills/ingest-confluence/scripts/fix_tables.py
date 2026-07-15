@@ -14,12 +14,16 @@ Does exactly two things, everything else stays byte-for-byte:
    (applied inside tables and standalone; code fences are never touched).
 
 Idempotent: a second run changes 0 files.
-CLI: python3 fix_tables.py <dir-or-file> [--dry-run]
+CLI: python3 fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre]
+--unroll-pre: multiline-pre таблицы не остаются HTML, а разворачиваются —
+ячейка получает «см. Пример N ниже», код выносится фенсами после таблицы.
 """
 import os, re, sys, html
 import lxml.html
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tablemd
+
+UNROLL = False   # --unroll-pre: см. docstring
 
 S_MARK, E_MARK = "\x00TBL\x00", "\x00/TBL\x00"
 
@@ -90,7 +94,7 @@ def convert_tables(text, relname, log):
                 el = el.find(".//table")
             if el is None:
                 raise tablemd.Fallback("unparseable")
-            gfm = tablemd.table_to_gfm(el, indent=m.group(1))
+            gfm = tablemd.table_to_gfm(el, indent=m.group(1), unroll_pre=UNROLL)
         except tablemd.Fallback as fb:
             log.append((relname, fb.reason))
             continue
@@ -139,10 +143,13 @@ def process_file(path, relname, log):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "--dry-run"]
+    global UNROLL
+    flags = ("--dry-run", "--unroll-pre")
+    args = [a for a in sys.argv[1:] if a not in flags]
     dry = "--dry-run" in sys.argv[1:]
+    UNROLL = "--unroll-pre" in sys.argv[1:]
     if len(args) != 1:
-        sys.exit("usage: fix_tables.py <dir-or-file> [--dry-run]")
+        sys.exit("usage: fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre]")
     root = args[0]
     files = []
     if os.path.isfile(root):
