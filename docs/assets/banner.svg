@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="1200" height="440" role="img" aria-label="Loft — document-work kernel for Claude Code">
+  <defs>
+    <!-- brass wordmark: champagne crown fading to aged bronze -->
+    <linearGradient id="brass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#fdf9f0"/>
+      <stop offset="42%" stop-color="#f2e3c4"/>
+      <stop offset="72%" stop-color="#d9b586"/>
+      <stop offset="100%" stop-color="#b28a52"/>
+    </linearGradient>
+    <!-- accent underline: warm ember drifting to the keel's cool blue -->
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#e0a04a"/>
+      <stop offset="55%" stop-color="#d4726a"/>
+      <stop offset="100%" stop-color="#5f8ed6"/>
+    </linearGradient>
+    <!-- attic-window light falling from the upper left -->
+    <radialGradient id="halo" cx="15%" cy="22%" r="55%">
+      <stop offset="0%"  stop-color="#8a5a24" stop-opacity="0.32"/>
+      <stop offset="55%" stop-color="#3d2c14" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#0b0906" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- deep, warm near-black field -->
+  <rect width="1200" height="440" fill="#0b0906"/>
+  <rect width="1200" height="440" fill="url(#halo)"/>
+
+  <!-- eyebrow: dot + tracked kicker -->
+  <circle cx="88" cy="93" r="5" fill="#d89a4a"/>
+  <circle cx="88" cy="93" r="9.5" fill="none" stroke="#d89a4a" stroke-opacity="0.28" stroke-width="1"/>
+  <text x="112" y="99"
+        font-family="'SF Mono', SFMono-Regular, Menlo, Consolas, monospace"
+        font-size="16" letter-spacing="6.5" fill="#988b76">LOFT · DOCUMENT-WORK KERNEL · v1.0</text>
+
+  <!-- wordmark -->
+  <text x="72" y="300"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="190" font-weight="800" letter-spacing="-4" fill="url(#brass)">loft</text>
+
+  <!-- subtitle, two lines, in warm lamplight -->
+  <text x="80" y="352"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="22" font-weight="500" fill="#dfa963">A minimal document-work kernel for Claude Code.</text>
+  <text x="80" y="383"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="22" font-weight="500" fill="#dfa963">The analyst&#8217;s loft, standing on the keel.</text>
+
+  <!-- accent underline -->
+  <rect x="80" y="414" width="232" height="3" rx="1.5" fill="url(#accent)"/>
+</svg>
