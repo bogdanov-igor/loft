@@ -13,7 +13,7 @@ index to build. The kernel is markdown plus a few deterministic scripts.
 
 ## Quickstart
 
-**1.** Download `loft_1.0.0.tgz` and `loft_1.0.0.tgz.sha256` from
+**1.** Download `loft_1.1.0.tgz` and `loft_1.1.0.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -36,12 +36,12 @@ The same two paths, typed yourself. They run the same installer.
 
 ### From the archive
 
-You have two files side by side: `loft_1.0.0.tgz` and its `.sha256` sidecar.
+You have two files side by side: `loft_1.1.0.tgz` and its `.sha256` sidecar.
 
 ```sh
 cd /path/to/project                 # copy both files here
-shasum -c loft_1.0.0.tgz.sha256     # verify integrity first: expect "OK"
-tar -xzf loft_1.0.0.tgz
+shasum -c loft_1.1.0.tgz.sha256     # verify integrity first: expect "OK"
+tar -xzf loft_1.1.0.tgz
 bash loft/install.sh                # no argument = install into this directory
 ```
 

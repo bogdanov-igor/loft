@@ -59,6 +59,26 @@ EOF
 has "SV API v1.pdf" "$out" "пустой якорь получил имя из alias"
 has 'A \| B' "$out" "пайп в ячейке экранирован"
 has "FALLBACK:multiline-pre" "$out" "многострочный pre уходит в fallback"
+out="$(python3 - "$SK/ingest-confluence/scripts" <<'EOF'
+import sys; sys.path.insert(0, sys.argv[1])
+from lxml import html as H
+import tablemd
+t = H.fragment_fromstring('''<table><tr><th>Запрос</th></tr>
+<tr><td><pre class="json">{
+ "a": 1,
+ "b": 2,
+ "c": 3,
+ "d": 4,
+ "e": 5
+}</pre></td></tr></table>''')
+print(tablemd.table_to_gfm(t, unroll_pre=True))
+EOF
+)"
+has "см. Пример 1 ниже" "$out" "unroll: ссылка на пример в ячейке"
+has "Запрос — Пример 1:" "$out" "unroll: заголовок примера из колонки"
+has '```json' "$out" "unroll: фенс с языком из class"
+has '"e": 5' "$out" "unroll: содержимое pre сохранено"
+hasnt "<table" "$out" "unroll: HTML не остался"
 
 # ── fix_tables: конверсия + идемпотентность + фенс-защита ───────────────────
 section "fix_tables — идемпотентность"

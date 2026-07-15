@@ -14,7 +14,7 @@
 
 ## Быстрый старт
 
-**1.** Скачайте `loft_1.0.0.tgz` и `loft_1.0.0.tgz.sha256` из
+**1.** Скачайте `loft_1.1.0.tgz` и `loft_1.1.0.tgz.sha256` из
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) в папку
 проекта.
 
@@ -38,12 +38,12 @@
 
 ### Из архива
 
-Рядом лежат два файла: `loft_1.0.0.tgz` и его сайдкар `.sha256`.
+Рядом лежат два файла: `loft_1.1.0.tgz` и его сайдкар `.sha256`.
 
 ```sh
 cd /path/to/project                 # оба файла скопированы сюда
-shasum -c loft_1.0.0.tgz.sha256     # сначала целостность: ждём "OK"
-tar -xzf loft_1.0.0.tgz
+shasum -c loft_1.1.0.tgz.sha256     # сначала целостность: ждём "OK"
+tar -xzf loft_1.1.0.tgz
 bash loft/install.sh                # без аргумента = ставим в этот каталог
 ```
 

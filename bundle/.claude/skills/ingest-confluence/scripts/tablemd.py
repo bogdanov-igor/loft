@@ -12,6 +12,11 @@ Shared by convert.py (v2) and fix_tables.py. Design rules:
   row (data rows are never promoted to header);
 - <pre>/multi-line <code> in cells: 1 line -> inline code; 2..5 lines without
   indentation -> per-line inline code joined by "<br>"; else Fallback("multiline-pre");
+- optional unroll mode (table_to_gfm(..., unroll_pre=True)): instead of the
+  multiline-pre Fallback the cell gets "см. Пример N ниже" and the <pre> bodies
+  are emitted AFTER the table as "**<column header|строка R> — Пример N:**" +
+  fenced code block (language from pre/code class, else sniffed: {/[ -> json,
+  < -> xml); pre content is kept byte-exact (edge newlines trimmed);
 - Fallback (exception, caller keeps raw HTML and logs): colspan/rowspan > 1,
   nested tables, long/indented pre, empty table;
 - empty attachment anchors (<a ...></a>): text from data-linked-resource-default-alias,
@@ -100,6 +105,22 @@ def _pre_text(el):
         parts.append(d.tail or "")
     return "".join(parts)
 
+_unroll = None          # None -> disabled; list -> collect unrolled examples
+                        # (set per-table by table_to_gfm(unroll_pre=True))
+
+def _pre_lang(el):
+    """Fence language: pre/code class attr, else deterministic content sniff."""
+    cands = [el]
+    if el.tag == "pre":
+        cands += [c for c in el if c.tag == "code"]
+    for cand in cands:
+        tok = ((cand.get("class") or "").split() or [""])[0]
+        tok = tok[9:] if tok.startswith("language-") else tok
+        if re.fullmatch(r"[A-Za-z0-9+#.-]{1,20}", tok) and "pre" not in tok.lower():
+            return tok.lower()
+    head = _pre_text(el).lstrip()[:1]
+    return {"{": "json", "[": "json", "<": "xml"}.get(head, "")
+
 def _code_block(el):
     """<pre> (or multi-line <code>) per policy; may raise Fallback."""
     txt = _pre_text(el).strip("\n")
@@ -109,7 +130,12 @@ def _code_block(el):
     # short snippet without meaningful indentation -> per-line inline code
     if len(lines) <= 5 and not any(l[:1] in (" ", "\t") for l in lines):
         return "<br>".join(code_span(l) for l in lines)
-    raise Fallback("multiline-pre")
+    if _unroll is None:
+        raise Fallback("multiline-pre")
+    n = len(_unroll) + 1
+    _unroll.append({"n": n, "lang": _pre_lang(el), "text": txt,
+                    "row": 0, "col": 0})
+    return f"см. Пример {n} ниже"
 
 def _render_inline(el):
     tag = el.tag
@@ -228,9 +254,13 @@ def cell_md(cell):
 
 
 # ---------------------------------------------------------------- table -> GFM
-def table_to_gfm(table, indent=""):
+def table_to_gfm(table, indent="", unroll_pre=False):
     """lxml <table> element -> GFM pipe table (string). Raises Fallback when a
-    lossless conversion is impossible (caller keeps the raw HTML and logs)."""
+    lossless conversion is impossible (caller keeps the raw HTML and logs).
+    unroll_pre=True: multiline-pre cells no longer raise -- each becomes
+    "см. Пример N ниже" and the code bodies are appended after the table as
+    bold-labelled fenced blocks (see module docstring)."""
+    global _unroll
     if table.xpath(".//table"):
         raise Fallback("nested-table")
     for c in table.xpath(".//td | .//th"):
@@ -238,24 +268,49 @@ def table_to_gfm(table, indent=""):
             v = (c.get(attr) or "").strip()
             if v and v != "1":
                 raise Fallback("colspan-rowspan")
-    rows = []                                    # (cells:list[str], all_th, in_thead)
-    for tr in table.iter("tr"):
-        cells = [c for c in tr if c.tag in ("td", "th")]
-        if not cells:
-            continue
-        rows.append(([cell_md(c) for c in cells],
-                     all(c.tag == "th" for c in cells),
-                     bool(tr.xpath("ancestor::thead"))))
-    if not rows:
-        raise Fallback("empty-table")
-    ncol = max(len(r[0]) for r in rows)
-    if rows[0][1] or rows[0][2]:                 # real header row
-        header, body = rows[0][0], rows[1:]
-    else:                                        # never promote data to header
-        header, body = [""] * ncol, rows
-    def fmt(cells):
-        cells = cells + [""] * (ncol - len(cells))
-        return indent + "| " + " | ".join(cells) + " |"
-    out = [fmt(header), indent + "|" + "----|" * ncol]
-    out.extend(fmt(r[0]) for r in body)
-    return "\n".join(out)
+    _unroll = [] if unroll_pre else None
+    try:
+        rows = []                                # (cells:list[str], all_th, in_thead)
+        for tr in table.iter("tr"):
+            cells = [c for c in tr if c.tag in ("td", "th")]
+            if not cells:
+                continue
+            row_cells = []
+            for ci, c in enumerate(cells):
+                k = len(_unroll) if _unroll is not None else 0
+                row_cells.append(cell_md(c))
+                if _unroll is not None:          # bind fresh examples to a cell
+                    for e in _unroll[k:]:
+                        e["row"], e["col"] = len(rows), ci
+            rows.append((row_cells, all(c.tag == "th" for c in cells),
+                         bool(tr.xpath("ancestor::thead"))))
+        if not rows:
+            raise Fallback("empty-table")
+        ncol = max(len(r[0]) for r in rows)
+        has_header = rows[0][1] or rows[0][2]
+        if has_header:                           # real header row
+            header, body = rows[0][0], rows[1:]
+        else:                                    # never promote data to header
+            header, body = [""] * ncol, rows
+        def fmt(cells):
+            cells = cells + [""] * (ncol - len(cells))
+            return indent + "| " + " | ".join(cells) + " |"
+        out = [fmt(header), indent + "|" + "----|" * ncol]
+        out.extend(fmt(r[0]) for r in body)
+        gfm = "\n".join(out)
+        for e in (_unroll or []):
+            gfm += "\n\n" + "\n".join(indent + l for l in _example_md(e, header, has_header).split("\n"))
+        return gfm
+    finally:
+        _unroll = None
+
+def _example_md(e, header, has_header):
+    """One unrolled example: '**<label> — Пример N:**' + fenced code block."""
+    label = ""
+    if has_header and e["row"] != 0 and e["col"] < len(header):
+        label = re.sub(r"[*`]", "", header[e["col"]]).replace("\\", "").strip()
+    if not label:
+        label = f"строка {e['row'] if has_header else e['row'] + 1}"
+    runs = re.findall(r"`+", e["text"])
+    f = "`" * max(3, max((len(r) for r in runs), default=0) + 1)
+    return f"**{label} — Пример {e['n']}:**\n\n{f}{e['lang']}\n{e['text']}\n{f}"

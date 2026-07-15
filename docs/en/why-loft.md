@@ -80,7 +80,7 @@ renderer, patches nothing, and vendors nothing.
 ## What loft is instead
 
 One always-on contract (81 lines, ~3k tokens) stating the profession and the
-pointers; 13 skills that load only when used; 2 subagents split by context
+pointers; 14 skills that load only when used; 2 subagents split by context
 isolation, not job title; 2 hooks; file memory with a one-line index; zero
 runtime services. The profession's core rule sits in the contract itself:
 **not a single invented fact** — every claim is derivable from a source or

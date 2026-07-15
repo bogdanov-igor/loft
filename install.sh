@@ -134,7 +134,7 @@ selfcheck_fail() { echo "loft: САМОПРОВЕРКА ПРОВАЛЕНА — $
 [ -f "$DEST/.claude/CLAUDE.md" ] || selfcheck_fail "нет контракта"
 [ -x "$DEST/.claude/hooks/leak-guard.sh" ] && [ -x "$DEST/.claude/hooks/update-check.sh" ] \
   || selfcheck_fail "хуки не исполняемые"
-[ "$(ls "$DEST/.claude/skills" | wc -l | tr -d ' ')" -ge 13 ] || selfcheck_fail "скиллов меньше 13"
+[ "$(ls "$DEST/.claude/skills" | wc -l | tr -d ' ')" -ge 14 ] || selfcheck_fail "скиллов меньше 14"
 ( cd "$DEST" && python3 .claude/skills/link-check/scripts/link_check.py spec >/dev/null 2>&1 ) \
   || selfcheck_fail "link_check не отрабатывает"
 echo "loft: самопроверка установки — OK"

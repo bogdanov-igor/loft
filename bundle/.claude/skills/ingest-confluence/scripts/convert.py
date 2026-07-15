@@ -42,11 +42,15 @@ _ap.add_argument("out", help="target wiki dir")
 _ap.add_argument("--space", default="", help="space key (default: export dir name)")
 _ap.add_argument("--base-url", default="",
                  help="Confluence base URL; empty -> no source:/footer links")
+_ap.add_argument("--unroll-pre", action="store_true",
+                 help="multiline <pre> in table cells -> 'см. Пример N ниже' + "
+                      "fenced code blocks after the table (no multiline-pre fallback)")
 _args = _ap.parse_args()
 SRC = _args.src
 OUT = _args.out
 SPACE = _args.space or os.path.basename(os.path.normpath(SRC))
 BASE_URL = _args.base_url.rstrip("/")
+UNROLL_PRE = _args.unroll_pre
 LIMIT = int(os.environ.get("LIMIT", "0"))             # 0 = all
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))  # ids to convert
 VIEW = BASE_URL + "/pages/viewpage.action?pageId={id}" if BASE_URL else ""
@@ -456,7 +460,7 @@ def convert_body(content, page="", fallbacks=None):
     md = pandoc_html(inner_html(content))
     for i, t in enumerate(saved):
         try:
-            tmd = tablemd.table_to_gfm(t)
+            tmd = tablemd.table_to_gfm(t, unroll_pre=UNROLL_PRE)
         except tablemd.Fallback as fb:
             print(f"[table-fallback] {page}: {fb.reason}")
             if fallbacks is not None:

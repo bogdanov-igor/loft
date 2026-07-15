@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-d89a4a?style=flat-square" alt="version 1.0.0">
+  <img src="https://img.shields.io/badge/version-1.1.0-d89a4a?style=flat-square" alt="version 1.1.0">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
-  <img src="https://img.shields.io/badge/kernel-180%20KB%20%C2%B7%2027%20files-success?style=flat-square" alt="180 KB, 27 files">
-  <img src="https://img.shields.io/badge/skills-13-success?style=flat-square" alt="13 skills">
+  <img src="https://img.shields.io/badge/kernel-204%20KB%20%C2%B7%2029%20files-success?style=flat-square" alt="204 KB, 29 files">
+  <img src="https://img.shields.io/badge/skills-14-success?style=flat-square" alt="14 skills">
   <img src="https://img.shields.io/badge/runtime%20services-0-success?style=flat-square" alt="zero runtime services">
   <img src="https://img.shields.io/badge/contract-81%20lines-success?style=flat-square" alt="81-line contract">
 </p>
@@ -40,7 +40,7 @@ by cause, and what loft does against each.
 
 ## Quickstart
 
-**1.** Download `loft_1.0.0.tgz` and `loft_1.0.0.tgz.sha256` from
+**1.** Download `loft_1.1.0.tgz` and `loft_1.1.0.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -61,8 +61,8 @@ nothing) — see the [migration guide](docs/en/migration.md).
 
 ```sh
 cd /path/to/project                    # tgz + .sha256 copied here
-shasum -c loft_1.0.0.tgz.sha256        # integrity first: expect "OK"
-tar -xzf loft_1.0.0.tgz
+shasum -c loft_1.1.0.tgz.sha256        # integrity first: expect "OK"
+tar -xzf loft_1.1.0.tgz
 bash loft/install.sh                   # no argument = install right here
 ```
 
@@ -85,9 +85,9 @@ only for the `ingest-*` skills.
   live in skills and load only when used. The profession's core rule, verbatim
   in the contract: **not a single invented fact** — every claim is either
   derivable from a source or explicitly marked as an assumption or a question.
-- **13 lazy-loaded skills** — spec work (`tz-write`, `tz-adapt`, `tz-audit`,
+- **14 lazy-loaded skills** — spec work (`tz-write`, `tz-adapt`, `tz-audit`,
   `tz-elicit` with question banks for 6 task types), corpus work
-  (`ingest-confluence`, `ingest-docs`, `review-intake`, `link-check`), and process
+  (`ingest-confluence`, `ingest-docs`, `review-intake`, `link-check`, `knowledge-map`), and process
   (`spec-bootstrap`, `deliver-pdf`, `remember`, `stage`, `migrate-specos`).
 - **2 subagents** — `scout` (reads big page batches so the main window stays
   clean) and `verifier` (independent acceptance of documents with a fresh
@@ -135,11 +135,12 @@ lxml). No LLM rewrites a single fact in transit.
   `data-linked-resource-default-alias` — no more `download.xhtml?...` link text.
 - Re-ingest updates the snapshot: stale pages are removed (files without a
   `confluence_id` are untouchable), and you get a change report —
-  `wiki/_CHANGES-<date>.md` for you, `wiki/.ingest.json` for machines
- .
+  `wiki/_CHANGES-<date>.md` for you, `wiki/.ingest.json` for machines.
 - `--space` and `--base-url` generalize it to any space; the snapshot date is
   read from the export itself. An idempotent postprocessor (`fix_tables.py`)
   upgrades wikis converted by v1 in place.
+- Optional `--unroll-pre`: tables holding multi-line JSON/XML examples become
+  clean GFM, with the code moved below the table as fenced blocks — byte-exact.
 
 Proven on a real banking corpus of **446 pages**: 468 of 609 raw HTML tables
 converted to clean GFM (the remainder are logged fallbacks, almost all
