@@ -1,8 +1,8 @@
 # Why Loft, and what changed from specos
 
-Loft is the successor to specos: same author, same profession, opposite
-conclusion. specos tried to give a document-working agent a whole system —
-two MCP servers seeded into every project, an embedding index over memory, a
+Loft is the successor to specos: same profession, opposite conclusion. specos
+tried to give a document-working agent a whole system — two MCP servers seeded
+into every project, an embedding index over memory, a
 run log, schema-validated artifacts, a multi-gate verify, even a patched
 webview in a third-party extension to render diagrams. What I got was a setup
 that demonstrably "got dumber" the longer it ran. Loft keeps the profession

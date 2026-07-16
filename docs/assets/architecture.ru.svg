@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" font-family="'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d89a4a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="560" rx="10" fill="#0b0906"/>
+  <rect x="0.5" y="0.5" width="959" height="559" rx="10" fill="none" stroke="#3d2c14"/>
+
+  <text x="40" y="42" font-size="12" letter-spacing="4" fill="#988b76">LOFT · РАСКЛАДКА ЯДРА И ПРОЕКТА</text>
+
+  <!-- kernel panel -->
+  <rect x="40" y="70" width="400" height="384" rx="8" fill="none" stroke="#8a5a24" stroke-width="1.2"/>
+  <text x="64" y="100" font-size="15" fill="#f2e3c4" font-weight="bold">.claude/ — ядро</text>
+  <text x="64" y="118" font-size="11" fill="#988b76">принадлежит ядру · переустановка перезапишет</text>
+
+  <rect x="64" y="134" width="352" height="60" rx="6" fill="#3d2c14" stroke="#d89a4a" stroke-width="1.2"/>
+  <text x="80" y="158" font-size="13" fill="#fdf9f0" font-weight="bold">CLAUDE.md — контракт</text>
+  <text x="80" y="177" font-size="11" fill="#d9b586">81 строка · ~3k токенов · всегда в контексте</text>
+
+  <rect x="64" y="210" width="352" height="84" rx="6" fill="none" stroke="#5f4023" stroke-width="1"/>
+  <text x="80" y="233" font-size="13" fill="#f2e3c4">skills/ — 14, ленивая загрузка</text>
+  <text x="80" y="252" font-size="11" fill="#988b76">tz-write · tz-adapt · tz-audit · tz-elicit</text>
+  <text x="80" y="268" font-size="11" fill="#988b76">ingest-confluence · link-check · stage · …</text>
+
+  <rect x="64" y="310" width="352" height="52" rx="6" fill="none" stroke="#5f4023" stroke-width="1"/>
+  <text x="80" y="332" font-size="13" fill="#f2e3c4">agents/ — scout · verifier</text>
+  <text x="80" y="350" font-size="11" fill="#988b76">изоляция контекста, не должности</text>
+
+  <rect x="64" y="378" width="352" height="52" rx="6" fill="none" stroke="#5f4023" stroke-width="1"/>
+  <text x="80" y="400" font-size="13" fill="#f2e3c4">hooks/ — leak-guard · update-check</text>
+  <text x="80" y="418" font-size="11" fill="#988b76">секреты не в доках · тихая строка версии</text>
+
+  <!-- contract loads skills on use -->
+  <line x1="240" y1="194" x2="240" y2="210" stroke="#d89a4a" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- project panel -->
+  <rect x="520" y="70" width="400" height="384" rx="8" fill="none" stroke="#5f4023" stroke-width="1.2"/>
+  <text x="544" y="100" font-size="15" fill="#f2e3c4" font-weight="bold">файлы проекта</text>
+  <text x="544" y="118" font-size="11" fill="#988b76">принадлежит проекту · сеется раз и не трогается</text>
+
+  <rect x="544" y="134" width="352" height="44" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="560" y="156" font-size="12.5" fill="#f2e3c4">wiki/</text>
+  <text x="640" y="156" font-size="11" fill="#988b76">зеркало Confluence — генерируется</text>
+
+  <rect x="544" y="186" width="352" height="44" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="560" y="208" font-size="12.5" fill="#f2e3c4">spec/</text>
+  <text x="640" y="208" font-size="11" fill="#988b76">авторские ТЗ · _STRUCTURE.md</text>
+
+  <rect x="544" y="238" width="352" height="44" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="560" y="260" font-size="12.5" fill="#f2e3c4">inbox/</text>
+  <text x="640" y="260" font-size="11" fill="#988b76">входящие файлы · оригиналы целы</text>
+
+  <rect x="544" y="290" width="352" height="44" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="560" y="312" font-size="12.5" fill="#f2e3c4">memory/</text>
+  <text x="640" y="312" font-size="11" fill="#988b76">индекс MEMORY.md + заметки</text>
+
+  <rect x="544" y="342" width="352" height="44" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="560" y="364" font-size="12.5" fill="#f2e3c4">stages/</text>
+  <text x="640" y="364" font-size="11" fill="#988b76">большая работа: brief.md + report.md</text>
+
+  <rect x="544" y="394" width="352" height="44" rx="6" fill="none" stroke="#5f4023"/>
+  <text x="560" y="416" font-size="12.5" fill="#f2e3c4">BACKLOG.md · QUESTIONS.md</text>
+  <text x="560" y="431" font-size="11" fill="#988b76">очередь работ · вопросы с планом продолжения</text>
+
+  <!-- agent flow -->
+  <line x1="440" y1="252" x2="520" y2="252" stroke="#d89a4a" stroke-width="1.2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <text x="480" y="238" font-size="11" fill="#d9b586" text-anchor="middle">агент</text>
+  <text x="480" y="271" font-size="9" fill="#988b76" text-anchor="middle">читает/пишет</text>
+
+  <!-- boundary rule -->
+  <line x1="40" y1="486" x2="920" y2="486" stroke="#3d2c14"/>
+  <text x="40" y="516" font-size="11.5" fill="#d9b586">правило границы: скрипты ядра — только детерминированные конвертеры: convert.py · fix_tables.py · link_check.py</text>
+  <text x="40" y="535" font-size="11" fill="#988b76">проверки смысла = указания агентам · всё с состоянием, историей или UI живёт вне ядра</text>
+</svg>
