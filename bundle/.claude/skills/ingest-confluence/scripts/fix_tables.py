@@ -23,7 +23,17 @@ else stays byte-for-byte, code fences and inline `code` are never touched:
    fallback (kept as raw HTML, logged): colspan/rowspan (unless
    --expand-spans), nested tables, long/indented <pre> in cells. Junk lines
    adjacent to a REPLACED block (blank runs, lone "\\" from <br/>) are
-   collapsed to one blank line.
+   collapsed to one blank line. Multi-line fallback blocks without <pre>
+   are collapsed to ONE line (a newline inside raw HTML ends the block for
+   md renderers -- the tail rendered as text);
+6. when <root>/.pagemap.json exists (written by convert.py), absolute
+   confluence URLs that resolve to a page of this wiki (?pageId=,
+   /spaces/<KEY>/pages/<id>, /x/<tiny>) become [[wikilinks]] in flow and
+   note-relative hrefs inside raw tables;
+7. pandoc artifact repairs (verified against source exports): "-\\>" -> "->",
+   broken bold "**X\\**" at end of line -> "**X**", default expand label
+   "**▸ Нажмите здесь для раскрытия...**" -> "**▸ Подробнее**",
+   "[!KEY](jira-url?src=confmacro)" -> "[KEY](...)".
 
 Idempotent: a second run changes 0 files.
 CLI: python3 fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre] [--expand-spans]
@@ -32,7 +42,7 @@ CLI: python3 fix_tables.py <dir-or-file> [--dry-run] [--unroll-pre] [--expand-sp
 --expand-spans: colspan/rowspan таблицы не остаются HTML -- rowspan повторяет
 значение на каждой строке, colspan дополняет пропуски пустыми ячейками.
 """
-import os, re, sys, html
+import os, re, sys, html, json
 import urllib.parse
 import lxml.html
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -121,6 +131,36 @@ def fix_empty_anchors_text(text):
     return re.sub(r"<a\b[^>]*></a>", sub, text)
 
 
+# ---------------------------------------------------------------- pagemap
+def load_pagemap(base):
+    """<base>/.pagemap.json (written by convert.py) -> {id: (basename, relpath)}."""
+    try:
+        pm = json.load(open(os.path.join(base, ".pagemap.json"), encoding="utf-8"))
+        return {pid: (r["basename"], r["relpath"]) for pid, r in pm.items()
+                if r.get("basename") and r.get("relpath")}
+    except Exception:
+        return {}
+
+
+def conf_page(url, pagemap):
+    """Absolute confluence URL -> (basename, relpath) of a wiki page, or None."""
+    if not pagemap:
+        return None
+    u = html.unescape(url)
+    m = re.search(r"[?&]pageId=(\d+)", u)
+    if m and m.group(1) in pagemap:
+        return pagemap[m.group(1)]
+    m = re.search(r"/spaces/[^/]+/pages/(\d+)(?:[/?#]|$)", u)
+    if m and m.group(1) in pagemap:
+        return pagemap[m.group(1)]
+    m = re.search(r"/x/([A-Za-z0-9_\-]+)", u)
+    if m:
+        for pid in tablemd.decode_tiny(m.group(1)):
+            if pid in pagemap:
+                return pagemap[pid]
+    return None
+
+
 # ---------------------------------------------------------------- anchors/imgs
 def drop_icon_imgs(text):
     """Remove decorative avatar/emoticon <img> tags (jira macro icons)."""
@@ -153,7 +193,7 @@ def _scrub_open_tags(segment):
     return OPEN_TAG.sub(sub, segment)
 
 
-def _anchor_to_md(inner, attrs_s, pipe_row):
+def _anchor_to_md(inner, attrs_s, pipe_row, pagemap=None):
     """<a ...>inner</a> (tag-free inner) -> markdown, or None to keep HTML."""
     hm = re.search(r'href="([^"]*)"', attrs_s)
     if not hm:
@@ -162,18 +202,32 @@ def _anchor_to_md(inner, attrs_s, pipe_row):
     text = re.sub(r"\s+", " ", html.unescape(inner)).replace("\xa0", " ").strip()
     if "|" in text or "]]" in text or "[[" in text:
         return None                               # scrub-only is safer
+    text_is_url = bool(re.match(r"https?://", text))
     scheme = re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href)
+    sep = "\\|" if pipe_row else "|"
     if not scheme and not href.startswith(("/", "#")):
         path = urllib.parse.unquote(href.split("#")[0].split("?")[0])
         base = os.path.basename(path)
-        sep = "\\|" if pipe_row else "|"
         if base.endswith(".md"):                  # internal page -> wikilink
             name = base[:-3]
             if not text or text == name:
                 return f"[[{name}]]"
+            if text_is_url:                       # pasted URL as link text:
+                hit = conf_page(text, pagemap)    # page name says more
+                mpid = re.search(r"pageId=(\d+)", text)
+                if (hit and hit[0] == name) or (mpid and name.endswith("-" + mpid.group(1))):
+                    return f"[[{name}]]"
             return f"[[{name}{sep}{text}]]"
         if "attachments/" in path or "assets/" in path:
             return f"[[{base}]]" if (not text or text == base) else f"[[{base}{sep}{text}]]"
+    if scheme and re.match(r"https?://", href):   # confluence URL -> wikilink
+        hit = conf_page(href, pagemap)
+        if hit:
+            name = hit[0]
+            if (not text or text == name or text == href
+                    or (text_is_url and conf_page(text, pagemap) == hit)):
+                return f"[[{name}]]"
+            return f"[[{name}{sep}{text}]]"
     url = tablemd.esc_url(href)
     if not text or text == href:
         return f"<{url}>"
@@ -183,12 +237,15 @@ def _anchor_to_md(inner, attrs_s, pipe_row):
     return f"[{text}]({url})"
 
 
-def clean_anchors(text):
+def clean_anchors(text, pagemap=None, relname=""):
     """Flow anchors -> markdown; anchors in raw <table> blocks and anchors
-    with nested tags -> attribute scrub only. Raw-table element tags (td, p,
-    ...) are attribute-scrubbed too. Fences/inline code stay untouched."""
+    with nested tags -> attribute scrub only (confluence hrefs inside tables
+    are rewritten to note-relative paths when the pagemap knows them).
+    Raw-table element tags (td, p, ...) are attribute-scrubbed too.
+    Fences/inline code stay untouched."""
     lines = text.split("\n")
     masked = fence_lines(lines)
+    here = os.path.dirname(relname)
     depth = 0
     for i, l in enumerate(lines):
         if i in masked:
@@ -207,14 +264,94 @@ def clean_anchors(text):
                     am = re.match(r"<a\b((?:\s[^<>]*?)?)>", m.group(0))
                     if not am:
                         return m.group(0)
-                    md = _anchor_to_md(m.group(1), am.group(1), pipe_row)
+                    md = _anchor_to_md(m.group(1), am.group(1), pipe_row, pagemap)
                     return md if md is not None else m.group(0)
                 s = A_SIMPLE.sub(conv, s)
+            elif pagemap:                         # in tables: localize hrefs
+                def loc(m):
+                    hit = conf_page(m.group(1), pagemap)
+                    if not hit:
+                        return m.group(0)
+                    rel = os.path.relpath(hit[1], here) if here else hit[1]
+                    return f'href="{urllib.parse.quote(rel)}"'
+                s = re.sub(r'href="(https?://[^"]+)"', loc, s)
             if "<" in s:                          # leftovers: scrub attributes
                 s = _scrub_open_tags(s)
             return s
 
         lines[i] = sub_outside_code(l, seg)
+    return "\n".join(lines)
+
+
+def conf_links_to_wikilinks(text, pagemap):
+    """Flow markdown links/autolinks with absolute confluence URLs that
+    resolve via the pagemap -> [[wikilinks]] (alias kept unless it is the
+    URL itself or the page name)."""
+    if not pagemap:
+        return text
+    lines = text.split("\n")
+    masked = fence_lines(lines)
+    for i, l in enumerate(lines):
+        if i in masked or "http" not in l:
+            continue
+        pipe_row = bool(re.match(r"^[ \t]*\|", l))
+        sep = "\\|" if pipe_row else "|"
+
+        def seg(s):
+            def sub_link(m):
+                text_in, url = m.group(1).strip(), m.group(2)
+                hit = conf_page(url, pagemap)
+                if not hit:
+                    return m.group(0)
+                name = hit[0]
+                plain = text_in.replace("\\|", "|")
+                if (not plain or plain == name or plain == url
+                        or (re.match(r"https?://", plain)
+                            and conf_page(plain, pagemap) == hit)):
+                    return f"[[{name}]]"
+                if "[[" in plain or "]]" in plain or ("|" in plain and not pipe_row):
+                    return m.group(0)
+                return f"[[{name}{sep}{text_in}]]"
+            s = re.sub(r"(?<!!)\[([^\]\n]*)\]\((https?://[^)\s]+)\)", sub_link, s)
+            s = re.sub(r"<(https?://[^>\s]+)>",
+                       lambda m: f"[[{conf_page(m.group(1), pagemap)[0]}]]"
+                       if conf_page(m.group(1), pagemap) else m.group(0), s)
+            return s
+
+        lines[i] = sub_outside_code(l, seg)
+    return "\n".join(lines)
+
+
+def _in_code_span(line, pos):
+    for m in CODE_SPAN.finditer(line):
+        if m.start() <= pos < m.end():
+            return True
+    return False
+
+
+def repair_artifacts(text):
+    """Pandoc artifact repairs, verified against source exports (see module
+    docstring, item 7). Outside fences; inline code spans untouched."""
+    lines = text.split("\n")
+    masked = fence_lines(lines)
+    for i, l in enumerate(lines):
+        if i in masked:
+            continue
+        n = l
+        n = n.replace("**▸ Нажмите здесь для раскрытия...**", "**▸ Подробнее**")
+        n = n.replace("**▸ Click here to expand...**", "**▸ Подробнее**")
+        if "-\\>" in n:
+            n = sub_outside_code(n, lambda s: s.replace("-\\>", "->"))
+        if "[!" in n:
+            n = sub_outside_code(n, lambda s: re.sub(
+                r"\[!([A-Za-z][A-Za-z0-9]*-\d+)\]\((https?://[^)\s]*src=confmacro[^)\s]*)\)",
+                r"[\1](\2)", s))
+        # broken bold from <strong>X<br/></strong>: "**X\**" at end of line;
+        # (?<!\*) keeps legitimately escaped "...\*\*" (literal stars) intact
+        m = re.search(r"(?<!\\\*)(?<!\*)( ?)\\\*\*$", n)
+        if m and not _in_code_span(n, m.start()):
+            n = n[:m.start()] + "**"
+        lines[i] = n
     return "\n".join(lines)
 
 
@@ -283,17 +420,23 @@ def convert_tables(text, relname, log):
                                        expand_spans=EXPAND)
         except tablemd.Fallback as fb:
             log.append((relname, fb.reason))
+            blk = text[i:j]
+            # multi-line raw HTML block: md renderers end the block at the
+            # first blank/loose line and print the tail as text -> collapse
+            # to one line (except <pre>: its newlines are content)
+            if "\n" in blk and "<pre" not in blk:
+                reps.append((i, j, re.sub(r"\s*\n\s*", " ", blk).strip(), False))
             continue
-        reps.append((i, j, gfm))
+        reps.append((i, j, gfm, True))
     if not reps:
         return text, 0
     out, cur = [], 0
-    for i, j, gfm in reps:
+    for i, j, gfm, _conv in reps:
         out.append(text[cur:i])
         out.append(S_MARK + "\n" + gfm + "\n" + E_MARK)
         cur = j
     out.append(text[cur:])
-    return _cleanup_markers("".join(out)), len(reps)
+    return _cleanup_markers("".join(out)), sum(1 for r in reps if r[3])
 
 
 def _cleanup_markers(text):
@@ -321,13 +464,15 @@ def _cleanup_markers(text):
     return "\n".join(res)
 
 
-def process_file(path, relname, log):
+def process_file(path, relname, log, pagemap=None):
     old = open(path, encoding="utf-8").read()
     new = drop_icon_imgs(old)
     new = fix_empty_anchors_text(new)             # needs data-* attrs: before scrub
-    new = clean_anchors(new)
+    new = clean_anchors(new, pagemap, relname)
     new, n_tbl = convert_tables(new, relname, log)
     new = mdlinks_to_wikilinks(new)
+    new = conf_links_to_wikilinks(new, pagemap)
+    new = repair_artifacts(new)
     return old, new, n_tbl
 
 
@@ -348,11 +493,14 @@ def main():
         base = root
         for dirpath, _, names in os.walk(root):
             files += [os.path.join(dirpath, n) for n in sorted(names) if n.endswith(".md")]
+    pagemap = load_pagemap(base)
+    if pagemap:
+        print(f"[pagemap] {len(pagemap)} pages known -- confluence URLs will resolve")
     log, n_changed, n_tables = [], 0, 0
     n_wl_old = n_wl_new = 0                       # wikilink counters (sanity print)
     for f in sorted(files):
         rel = os.path.relpath(f, base)
-        old, new, n_tbl = process_file(f, rel, log)
+        old, new, n_tbl = process_file(f, rel, log, pagemap)
         n_wl_old += len(re.findall(r"\[\[", old))
         n_wl_new += len(re.findall(r"\[\[", new))
         if new != old:

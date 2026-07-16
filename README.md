@@ -172,7 +172,7 @@ case-insensitive, NFC), so if it comes back green, the graph has no holes.
 
 ## Tests
 
-`test/run.sh` runs 77 self-tests over the kernel's scripts: `link_check`, the
+`test/run.sh` runs 102 self-tests over the kernel's scripts: `link_check`, the
 table writer, `fix_tables` idempotence, the migration sweep, the update check
 and installer scenarios — all offline, against throwaway fixtures.
 `build-archive.sh` runs the suite as a release gate and then does a real

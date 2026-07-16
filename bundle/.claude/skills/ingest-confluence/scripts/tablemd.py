@@ -26,9 +26,26 @@ Shared by convert.py (v2) and fix_tables.py. Design rules:
 - empty attachment anchors (<a ...></a>): text from data-linked-resource-default-alias,
   else aria-label, else basename(href) -- fill_empty_anchors()/anchor_fallback_text().
 """
-import os, re, html
+import os, re, html, base64
 import urllib.parse
 from lxml import etree
+
+
+def decode_tiny(code):
+    """Confluence /x/<code> tiny link -> candidate pageId(s).
+    The code is base64 (urlsafe or +/ variants) of the page id, little-endian.
+    Short codes are zero-padded with 'A' to a 4-byte group -- plain '='
+    padding alone loses the id (e.g. WooqB -> 69896794 needs the 'A' pad)."""
+    out = set()
+    cands = {code + "=" * (-len(code) % 4), (code + "AAAAAA")[:6] + "=="}
+    for cand in cands:
+        for dec in (base64.urlsafe_b64decode,
+                    lambda s: base64.b64decode(s.replace("-", "+").replace("_", "/"))):
+            try:
+                out.add(str(int.from_bytes(dec(cand), "little")))
+            except Exception:
+                pass
+    return out
 
 
 class Fallback(Exception):
