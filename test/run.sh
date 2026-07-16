@@ -148,6 +148,42 @@ hasnt "<table" "$a3" "expand-spans: HTML-таблиц не осталось"
 out="$(python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F3" --expand-spans 2>&1)"
 has "0/1 files changed" "$out" "expand-spans идемпотентен"
 
+# ── fix_tables: ремонт артефактов + pagemap-резолюция ───────────────────────
+section "fix_tables — артефакты pandoc и pagemap"
+F4="$TMP/ft4"; mkdir -p "$F4"
+cat > "$F4/.pagemap.json" <<'EOF'
+{"9": {"basename": "Стр-9", "relpath": "dir/Стр-9.md"},
+ "104": {"basename": "Тини-104", "relpath": "Тини-104.md"}}
+EOF
+cat > "$F4/r.md" <<'EOF'
+1. Обновить таблицу **BATCH_TASKS\**
+- KrakendLatencyP\*\*
+3. Тип **KrakendPercentIncorrectResponse** или **KrakendLatencyP\*\***
+Поле `state` -\> `active` и code --\> done, в коде не трогать: `a -\> b`
+**▸ Нажмите здесь для раскрытия...**
+| Jira | [!OB-455](https://jira.example.uz/browse/OB-455?src=confmacro) - тикет |
+Ссылка [https://conf.example/pages/viewpage.action?pageId=9](https://conf.example/pages/viewpage.action?pageId=9) и автолинк <https://conf.example/x/aA>
+<table><tbody><tr><td colspan="2"><a href="https://conf.example/pages/viewpage.action?pageId=9">в таблице</a></td>
+<td colspan="3">вторая строка</td></tr></tbody></table>
+EOF
+python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F4" >/dev/null 2>&1
+r4="$(cat "$F4/r.md")"
+has '**BATCH_TASKS**' "$r4" "битый болд **X\\** починен"
+has 'KrakendLatencyP\*\*'"$(printf '\n')" "$r4$(printf '\n')" "легитимный escape \\*\\* не тронут"
+has '**KrakendLatencyP\*\***' "$r4" "легитимный escape в болде не тронут"
+has '`state` -> `active` и code --> done' "$r4" "стрелки разэкранированы"
+has '`a -\> b`' "$r4" "стрелка в инлайн-коде не тронута"
+has "**▸ Подробнее**" "$r4" "плейсхолдер expand заменён"
+has "[OB-455](https://jira.example.uz/browse/OB-455?src=confmacro)" "$r4" "[!KEY] потерял лишний !"
+has "[[Стр-9]]" "$r4" "md-ссылка с pageId стала wikilink без URL-алиаса"
+has "[[Тини-104]]" "$r4" "автолинк /x/ tiny резолвится через pagemap"
+has 'href="dir/%D0%A1%D1%82%D1%80-9.md"' "$r4" "в таблице: conf-href локализован в относительный путь"
+tbl_lines=$(grep -c '<table\|</table>\|colspan' "$F4/r.md" || true)
+grep -q '<table><tbody><tr><td colspan="2">.*вторая строка.*</table>' "$F4/r.md" \
+  && ok || bad "многострочный fallback-блок схлопнут в одну строку"
+out="$(python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$F4" 2>&1)"
+has "0/1 files changed" "$out" "ремонт артефактов идемпотентен"
+
 # ── sweep: детект, карантин, неприкосновенность состояния ───────────────────
 section "migrate-specos sweep — карантин машинерии"
 S="$TMP/sw"; mkdir -p "$S/specos" "$S/.data" "$S/wiki" "$S/spec"
@@ -204,6 +240,18 @@ hasnt "viewavatar" "$r" "convert: jira-аватарка выпилена"
 hasnt 'class="external-link"' "$r" "convert: атрибутный шлак вычищен"
 has '<th colspan="2">Спан</th>' "$r" "convert: colspan-fallback остался HTML, но чистый"
 has "colspan-rowspan" "$out" "convert: fallback залогирован с причиной"
+has "[[Переименуемая-104|метод]]" "$r" "convert: /spaces/…/pages/<id> резолвится"
+has "[[Переименуемая-104|короткая]]" "$r" "convert: tiny-ссылка /x/ декодируется с A-паддингом"
+has "**BATCH_TASKS**" "$r" "convert: хвостовой <br> вынесен из болда (не **X\\**)"
+hasnt '\**' "$r" "convert: битого закрытия болда нет"
+has "**QR_PAYMENTS** по ключу" "$r" "convert: пробел на границе болда вынесен наружу"
+has "**вложенный**" "$r" "convert: вложенный strong сплющен"
+hasnt "****" "$r" "convert: голых **** нет"
+has "state -> active" "$r" "convert: стрелка -> не переэкранирована"
+has "code --> done" "$r" "convert: стрелка --> не переэкранирована"
+has "▸ Подробнее" "$r" "convert: дефолтный лейбл expand заменён"
+hasnt "Нажмите здесь для раскрытия" "$r" "convert: плейсхолдер expand не утёк"
+has "неизвестный макрос Confluence" "$r" "convert: unknown-macro оставил маркер, а не молчание"
 GX="$TMP/golden-exp"
 python3 "$CV" "$REPO/test/fixtures/export-v1" "$GX/wiki" --expand-spans >/dev/null 2>&1
 rx="$(cat "$GX/wiki/Раздел-101.md")"

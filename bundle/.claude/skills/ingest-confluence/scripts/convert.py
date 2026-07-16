@@ -279,6 +279,9 @@ def clean_dom(content, ctx):
     for cont in content.xpath(".//div[contains(@class,'expand-container')]"):
         label_el = cont.xpath(".//*[contains(@class,'expand-control-text')]")
         label = (label_el[0].text_content().strip() if label_el else "Подробнее")
+        # default UI placeholder of a title-less expand is not content
+        if re.fullmatch(r"(Нажмите здесь для раскрытия|Click here to expand)\s*(\.{3}|…)?", label):
+            label = "Подробнее"
         body = cont.xpath(".//div[contains(@class,'expand-content')]")
         new = etree.Element("div")
         p = etree.SubElement(new, "p")
@@ -332,16 +335,69 @@ def clean_dom(content, ctx):
     for el in content.xpath(".//strong | .//em | .//b | .//i"):
         if not "".join(el.itertext()).strip():
             unwrap(el)
+    # 5d. normalize emphasis boundaries -- pandoc emits broken GFM for
+    #     <strong>X<br/></strong> ("**X\**") and <strong>X </strong>и<strong>Y
+    #     ("**X **и**Y**", invalid close). Trailing <br> and edge whitespace
+    #     move OUT of the emphasis; same-kind nested emphasis is flattened
+    #     (pandoc would print "****X****").
+    EM_KIND = {"strong": "strong", "b": "strong", "em": "em", "i": "em"}
+    WS = " \t\r\n\xa0"
+    for el in list(content.iter()):
+        if not isinstance(el.tag, str) or el.tag not in EM_KIND:
+            continue
+        anc, nested = el.getparent(), False
+        while anc is not None:
+            if isinstance(anc.tag, str) and EM_KIND.get(anc.tag) == EM_KIND[el.tag]:
+                nested = True; break
+            anc = anc.getparent()
+        if nested:
+            unwrap(el); continue
+        parent = el.getparent()
+        if parent is None:
+            continue
+        while len(el) and el[-1].tag == "br":
+            br = el[-1]
+            el.remove(br)
+            br.tail = (br.tail or "") + (el.tail or "")
+            el.tail = None
+            parent.insert(list(parent).index(el) + 1, br)
+        t = el.text or ""
+        lead = t[:len(t) - len(t.lstrip(WS))]
+        if lead:
+            el.text = t[len(lead):]
+            i = list(parent).index(el)
+            if i == 0:
+                parent.text = (parent.text or "") + lead
+            else:
+                parent[i - 1].tail = (parent[i - 1].tail or "") + lead
+        if len(el):
+            t2 = el[-1].tail or ""
+            trail = t2[len(t2.rstrip(WS)):]
+            if trail:
+                el[-1].tail = t2[:len(t2) - len(trail)]
+                el.tail = trail + (el.tail or "")
+        else:
+            t2 = el.text or ""
+            trail = t2[len(t2.rstrip(WS)):]
+            if trail and t2.strip(WS):
+                el.text = t2[:len(t2) - len(trail)]
+                el.tail = trail + (el.tail or "")
     # 6. images
     for img in content.xpath(".//img"):
         src = img.get("src", "") or ""
         alt = img.get("alt") or img.get("data-linked-resource-default-alias") or ""
         # drop decorative confluence icons and generic file/code placeholders,
         # incl. jira-macro avatars (external <img> that pins pages to the tracker)
-        if (src.startswith("images/icons") or src.startswith("plugins/servlet")
+        if ("images/icons/" in src or src.startswith("images/icons")
+                or src.startswith("plugins/servlet")
                 or "placeholder-" in os.path.basename(src)
                 or "viewavatar" in src or "useravatar" in src
                 or "/images/emoticons/" in src):
+            if "unknown-macro" in src:      # macro the export could not render:
+                p = E("p")                  # dropping it silently loses content
+                s = etree.SubElement(p, "strong")
+                s.text = "⚠️ неизвестный макрос Confluence — содержимое не выгружено, см. страницу-источник"
+                replace_with(img, p); continue
             img.getparent().remove(img); continue
         new_src = None
         if src.startswith("attachments/"):
@@ -494,6 +550,11 @@ def convert_body(content, page="", fallbacks=None):
             if fallbacks is not None:
                 fallbacks.append({"page": page, "reason": fb.reason})
             tmd = lxml.html.tostring(t, encoding="unicode").strip()
+            # a newline inside a raw HTML block ends it for md renderers --
+            # the tail would render as text. Collapse to one line (except
+            # <pre>: its newlines are content).
+            if "\n" in tmd and "<pre" not in tmd:
+                tmd = re.sub(r"\s*\n\s*", " ", tmd)
         pat = re.compile(rf"(?m)^([ \t]*)ZZTBLPLACEHOLDER{i}ZZ[ \t]*$")
         if pat.search(md):
             md = pat.sub(lambda m: "\n".join(m.group(1) + l for l in tmd.split("\n")), md, count=1)
@@ -506,16 +567,7 @@ LINKTEXT = r"((?:[^\[\]\\\n]|\\.)*?)"   # link text: single line, tolerant of es
 def unesc(s):
     return re.sub(r"\\([!-/:-@\[-`{-~])", r"\1", s)
 
-def decode_tiny(code):
-    """Confluence /x/<code> tiny link -> candidate pageId(s) (base64 LE of id)."""
-    out = set()
-    for dec in (base64.urlsafe_b64decode,
-                lambda s: base64.b64decode(s.replace("-", "+").replace("_", "/"))):
-        try:
-            out.add(str(int.from_bytes(dec(code + "=" * (-len(code) % 4)), "little")))
-        except Exception:
-            pass
-    return out
+decode_tiny = tablemd.decode_tiny   # Confluence /x/<code> -> candidate pageId(s)
 
 def normtitle(t):
     return re.sub(r"\s+", " ", html.unescape(t)).strip().lower()
@@ -532,6 +584,9 @@ def resolve_confluence(url, ctx):
         pid = title2id.get(normtitle(urllib.parse.unquote(m.group(1).replace("+", " "))))
         if pid:
             return ("page", pid)
+    m = re.search(r"/spaces/[^/]+/pages/(\d+)(?:[/?#]|$)", u)   # modern URL form
+    if m and m.group(1) in pages:
+        return ("page", m.group(1))
     m = re.search(r"/x/([A-Za-z0-9_\-]+)", u)
     if m:
         for pid in decode_tiny(m.group(1)):
@@ -570,6 +625,10 @@ def post_process(md, rec, pages, href2id, ctx):
             ttl = pages[pid]["title"]
             if not text or text == ttl:
                 return f"[[{tb}]]"
+            # link text that is just the page's own confluence URL (pasted
+            # smart-link): the URL says nothing a reader needs -- drop it
+            if re.match(r"https?://", text) and resolve_confluence(text, ctx) == ("page", pid):
+                return f"[[{tb}]]"
             return f"[[{tb}|{text}]]"
         # unknown internal target -> keep text only
         return text or fn
@@ -594,7 +653,11 @@ def post_process(md, rec, pages, href2id, ctx):
         kind = resolve_confluence(url, ctx)
         if kind[0] == "page":
             b, t = pages[kind[1]]["basename"], pages[kind[1]]["title"]
-            return f"[[{b}]]" if (not text or normtitle(text) == normtitle(t)) else f"[[{b}|{text}]]"
+            if (not text or normtitle(text) == normtitle(t)
+                    or (re.match(r"https?://", text)
+                        and resolve_confluence(text, ctx) == kind)):
+                return f"[[{b}]]"
+            return f"[[{b}|{text}]]"
         if kind[0] == "file":
             flat = register(kind[1], ctx)
             return f"![[{flat}]]" if flat.lower().endswith(IMG_EXT) else f"[[{flat}|{text or flat}]]"
@@ -602,7 +665,9 @@ def post_process(md, rec, pages, href2id, ctx):
     md = re.sub(r"(?<!!)\[" + LINKTEXT + r"\]\(((?:https?:|/)[^)\s]+)\)", md_conf, md)
     # autolinks <url>: pandoc emits them for <a href="X">X</a> (text == href);
     # resolve confluence targets like md_conf does. Fence-aware: a literal
-    # <http://...> inside example code must stay untouched.
+    # <http://...> inside example code must stay untouched. Same loop also
+    # unescapes pandoc's over-escaped arrows ("A -\> B" -- the source had a
+    # plain "->"); inline `code` spans are skipped.
     def auto_conf(m):
         kind = resolve_confluence(m.group(1), ctx)
         if kind[0] == "page":
@@ -611,12 +676,19 @@ def post_process(md, rec, pages, href2id, ctx):
             flat = register(kind[1], ctx)
             return f"![[{flat}]]" if flat.lower().endswith(IMG_EXT) else f"[[{flat}|{flat}]]"
         return m.group(0)
+    def outside_code(line, fn):
+        out, pos = [], 0
+        for m in re.finditer(r"`+[^`]*`+", line):
+            out.append(fn(line[pos:m.start()])); out.append(m.group(0)); pos = m.end()
+        out.append(fn(line[pos:]))
+        return "".join(out)
+    fix_inline = lambda s: re.sub(r"<(https?://[^>\s]+)>", auto_conf, s).replace("-\\>", "->")
     lines, in_fence = md.split("\n"), False
     for i, l in enumerate(lines):
         if re.match(r"^[ \t]*(```|~~~)", l):
             in_fence = not in_fence
         elif not in_fence:
-            lines[i] = re.sub(r"<(https?://[^>\s]+)>", auto_conf, l)
+            lines[i] = outside_code(l, fix_inline)
     md = "\n".join(lines)
     # --- raw HTML left inside complex tables: rewrite refs to relative paths ---
     # (Obsidian/Foam don't parse [[..]]/![[..]] inside raw <table> blocks, but DO
