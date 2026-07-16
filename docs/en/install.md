@@ -13,7 +13,7 @@ The kernel is markdown plus a few deterministic scripts.
 
 ## Quickstart
 
-**1.** Download `loft_1.1.0.tgz` and `loft_1.1.0.tgz.sha256` from
+**1.** Download `loft_1.2.0.tgz` and `loft_1.2.0.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -36,12 +36,12 @@ Two paths, both running the same installer.
 
 ### From the archive
 
-You have two files side by side: `loft_1.1.0.tgz` and its `.sha256` sidecar.
+You have two files side by side: `loft_1.2.0.tgz` and its `.sha256` sidecar.
 
 ```sh
 cd /path/to/project                 # copy both files here
-shasum -c loft_1.1.0.tgz.sha256     # verify integrity first: expect "OK"
-tar -xzf loft_1.1.0.tgz
+shasum -c loft_1.2.0.tgz.sha256     # verify integrity first: expect "OK"
+tar -xzf loft_1.2.0.tgz
 bash loft/install.sh                # no argument = install into this directory
 ```
 
@@ -106,7 +106,7 @@ bash build-archive.sh    # → dist/loft_<version>.tgz + .sha256
 ```
 
 `build-archive.sh` is not shipped inside the archive. It runs `test/run.sh`
-first — 48 self-tests over the kernel's scripts, offline, on throwaway
+first — 103 self-tests over the kernel's scripts, offline, on throwaway
 fixtures — and refuses to build if anything fails. It then unpacks the archive
 it just built into a temp directory and performs a real install to verify the
 result end to end.
