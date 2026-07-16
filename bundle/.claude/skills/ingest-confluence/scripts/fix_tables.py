@@ -200,6 +200,7 @@ def _anchor_to_md(inner, attrs_s, pipe_row, pagemap=None):
         return None
     href = html.unescape(hm.group(1))
     text = re.sub(r"\s+", " ", html.unescape(inner)).replace("\xa0", " ").strip()
+    text = re.sub(r"^\*\*(.+)\*\*$", r"\1", text)  # bold-wrapped link text
     if "|" in text or "]]" in text or "[[" in text:
         return None                               # scrub-only is safer
     text_is_url = bool(re.match(r"https?://", text))
@@ -260,6 +261,13 @@ def clean_anchors(text, pagemap=None, relname=""):
 
         def seg(s):
             if not in_tbl:                        # flow: try full conversion
+                # bold/italic INSIDE a link is decoration (the link is the
+                # emphasis); md/wikilink alias renders "**" literally -> strip
+                s = re.sub(
+                    r"(?<!\\)(<a\b[^<>]*>)((?:[^<>]|</?(?:strong|em|b|i)\s*/?>)*?)</a>",
+                    lambda m: m.group(1)
+                    + re.sub(r"</?(?:strong|em|b|i)\s*/?>", "", m.group(2))
+                    + "</a>", s)
                 def conv(m):
                     am = re.match(r"<a\b((?:\s[^<>]*?)?)>", m.group(0))
                     if not am:

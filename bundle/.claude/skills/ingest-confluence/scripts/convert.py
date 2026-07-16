@@ -613,6 +613,9 @@ def post_process(md, rec, pages, href2id, ctx):
     # internal page links: [text](1234.html#anchor) -> [[basename|text]]
     def link_sub(m):
         text = unesc(m.group(1).strip())
+        # pandoc keeps <strong> inside a clean <a> as [**X**](u): the link IS
+        # the emphasis, and a wikilink alias renders "**" literally -> unwrap
+        text = re.sub(r"^\*\*(.+)\*\*$", r"\1", text)
         target = m.group(2)
         anchor = m.group(3) or ""
         fn = os.path.basename(target)
@@ -650,6 +653,7 @@ def post_process(md, rec, pages, href2id, ctx):
     # confluence cross-links in flow: [text](https://confluence.../...) -> wikilink/file
     def md_conf(m):
         text, url = unesc(m.group(1).strip()), m.group(2)
+        text = re.sub(r"^\*\*(.+)\*\*$", r"\1", text)   # см. link_sub
         kind = resolve_confluence(url, ctx)
         if kind[0] == "page":
             b, t = pages[kind[1]]["basename"], pages[kind[1]]["title"]

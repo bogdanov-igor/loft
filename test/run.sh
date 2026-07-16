@@ -119,6 +119,7 @@ section "fix_tables — якоря и атрибутный шлак"
 F2="$TMP/ft2"; mkdir -p "$F2"
 cat > "$F2/a.md" <<'EOF'
 Интро <a href="https://x.example/y" class="external-link" rel="nofollow">док</a> и <a href="../attachments/1_2.pdf" class="confluence-embedded-file" draggable="false">SV.pdf</a> и <a href="%D0%A1%D0%98-1.md">Регистрация</a>.
+Болд-ссылка: <a href="../СИ-2.md" rel="nofollow"><strong>Жирная</strong></a>
 Джира: <a href="https://jira.example/browse/OB-1?src=confmacro" class="jira-issue-key"><img src="https://jira.example/secure/viewavatar?size=xsmall"/>OB-1</a>
 Сам-себе-текст: <a href="https://conf.example/pages/viewpage.action?pageId=9" class="external-link">https://conf.example/pages/viewpage.action?pageId=9</a>
 <table class="confluenceTable" style="width: 100.0%;"><tbody><tr><td colspan="2" class="confluenceTd" style="text-align: center;"><a href="z.md" class="k" data-y="1">внутри</a></td></tr></tbody></table>
@@ -130,6 +131,7 @@ a="$(cat "$F2/a.md")"
 has "[док](https://x.example/y)" "$a" "внешний якорь стал markdown-ссылкой"
 has "[[1_2.pdf|SV.pdf]]" "$a" "якорь-вложение стал wikilink"
 has "[[СИ-1|Регистрация]]" "$a" "внутренний якорь стал wikilink (unquote)"
+has "[[СИ-2|Жирная]]" "$a" "болд внутри якоря срезан до плейн-алиаса"
 has "[OB-1](https://jira.example/browse/OB-1?src=confmacro)" "$a" "jira-якорь стал markdown"
 hasnt "viewavatar" "$a" "jira-аватарка выпилена"
 has "<https://conf.example/pages/viewpage.action?pageId=9>" "$a" "текст==href -> автолинк"
