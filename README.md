@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="Loft — document-work kernel for Claude Code" width="100%">
+  <img src="docs/assets/banner.svg?v=1.2" alt="Loft — document-work kernel for Claude Code" width="100%">
 </p>
 
 <p align="center">
