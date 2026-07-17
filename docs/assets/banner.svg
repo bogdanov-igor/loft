@@ -30,7 +30,7 @@
   <circle cx="88" cy="93" r="9.5" fill="none" stroke="#d89a4a" stroke-opacity="0.28" stroke-width="1"/>
   <text x="112" y="99"
         font-family="'SF Mono', SFMono-Regular, Menlo, Consolas, monospace"
-        font-size="16" letter-spacing="6.5" fill="#988b76">LOFT · DOCUMENT-WORK KERNEL · v1.1 · BOGDANOV</text>
+        font-size="16" letter-spacing="6.5" fill="#988b76">LOFT · DOCUMENT-WORK KERNEL · v1.2 · BOGDANOV</text>
 
   <!-- wordmark -->
   <text x="72" y="300"
