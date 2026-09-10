@@ -9,7 +9,7 @@ You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
-Loft is a sibling of Keel (2026, same author) — the same kernel
-philosophy applied to the analyst's document work. Any redistribution —
-modified or not — must retain this notice and state what was changed,
-per section 4 of the License.
+Loft shares its kernel philosophy with Keel, my kernel for product
+development, and applies it to an analyst's document work. Any
+redistribution — modified or not — must retain this notice and state
+what was changed, per section 4 of the License.
