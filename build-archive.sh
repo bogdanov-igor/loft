@@ -7,10 +7,26 @@ ROOT="$(cd "$(dirname "$0")" && pwd -P)"
 VER="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 OUT="$ROOT/dist"
 STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
+CACHE="$(mktemp -d)"
+trap 'rm -rf "$STAGE" "$CACHE"' EXIT
 
-# Релизный гейт: самотесты ядра до любой упаковки.
-bash "$ROOT/test/run.sh" >/dev/null || { echo "loft: test/run.sh ПРОВАЛЕН — сборка отменена" >&2; exit 1; }
+# Сборка герметична: ни один её шаг не пишет в настоящий ~/.cache и не ходит в
+# сеть. Кэш update-check — во временный каталог, посеянный заведомо старой
+# версией; сам хук выключён везде, кроме одной проверки ниже, которая его
+# включает явно. Без этого сборка падала, когда на GitHub появлялся релиз
+# новее собираемого.
+export XDG_CACHE_HOME="$CACHE"
+export LOFT_NO_UPDATE_CHECK=1
+mkdir -p "$CACHE/loft"
+printf '%s\n%s\n' "$(date +%s)" "0.0.1" > "$CACHE/loft/latest-bogdanov-igor-loft"
+
+# Релизный гейт: самотесты ядра до любой упаковки. LOFT_BUILD_GATE говорит
+# кейсу самой сборки не запускать её рекурсивно — остальные кейсы идут все.
+if ! gate="$(LOFT_BUILD_GATE=1 bash "$ROOT/test/run.sh" 2>&1)"; then
+  echo "loft: test/run.sh ПРОВАЛЕН — сборка отменена" >&2
+  printf '%s\n' "$gate" | grep -E 'FAIL:|^итого:' >&2
+  exit 1
+fi
 
 mkdir -p "$STAGE/loft" "$OUT"
 # Доки и лицензия едут внутри архива: получатель tgz получает полный
@@ -24,7 +40,48 @@ chmod +x "$STAGE/loft/install.sh"
 find "$STAGE/loft/bundle" -name '*.sh' -exec chmod +x {} +
 
 TGZ="$OUT/loft_${VER}.tgz"
-tar -czf "$TGZ" -C "$STAGE" loft
+# Упаковывает python3 (stdlib tarfile+gzip), а не системный tar. Ветвление на
+# bsdtar/GNU tar давало разные байты на одном и том же дереве — реализации
+# по-разному набивают восьмеричные поля заголовка, — и sha256 был воспроизводим
+# только в пределах одной ОС. Здесь фиксировано всё, что зависело от машины и
+# сборщика: формат ustar, порядок записей по байтам пути, uid/gid 0 и пустые
+# имена владельцев (иначе в заголовок едет имя пользователя сборщика), права
+# 0755 каталогам и исполняемым и 0644 остальным, время 2020-01-01 UTC вместо
+# момента cp, gzip без имени и времени файла в потоке и с фиксированным
+# уровнем. Распаковывается обычным tar -xzf любой реализации.
+python3 - "$STAGE" "$TGZ" <<'PY'
+import gzip, os, sys, tarfile
+
+stage, out = sys.argv[1], sys.argv[2]
+MTIME = 1577836800  # 2020-01-01 00:00:00 UTC
+
+paths = []
+for base, _dirs, files in os.walk(os.path.join(stage, "loft")):
+    rel = os.path.relpath(base, stage)
+    paths.append(rel)
+    paths.extend(os.path.join(rel, f) for f in files)
+paths.sort(key=lambda p: p.encode())
+
+with open(out, "wb") as raw, \
+     gzip.GzipFile(filename="", mode="wb", compresslevel=9, mtime=0, fileobj=raw) as gz, \
+     tarfile.open(fileobj=gz, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+    for rel in paths:
+        full = os.path.join(stage, rel)
+        st = os.stat(full)
+        isdir = os.path.isdir(full)
+        ti = tarfile.TarInfo(rel)
+        ti.type = tarfile.DIRTYPE if isdir else tarfile.REGTYPE
+        ti.mode = 0o755 if isdir or st.st_mode & 0o100 else 0o644
+        ti.size = 0 if isdir else st.st_size
+        ti.mtime = MTIME
+        ti.uid = ti.gid = 0
+        ti.uname = ti.gname = ""
+        if isdir:
+            tar.addfile(ti)
+        else:
+            with open(full, "rb") as f:
+                tar.addfile(ti, f)
+PY
 ( cd "$OUT" && shasum -a 256 "loft_${VER}.tgz" > "loft_${VER}.tgz.sha256" )
 
 # Самотест: распаковать во временный каталог и реально установить.
@@ -39,8 +96,9 @@ fail() { echo "loft: самотест архива ПРОВАЛЕН — $1 (пл
                                                      || fail "хуки не исполняемые"
 [ -x "$T/.claude/skills/migrate-specos/sweep.sh" ]   || fail "sweep не исполняемый"
 [ "$(cat "$T/.claude/VERSION")" = "$VER" ]           || fail "версия не проштампована"
-[ "$(ls "$T/.claude/skills" | wc -l | tr -d ' ')" -ge 14 ] || fail "скиллов меньше 14"
-out="$(cd "$T" && CLAUDE_PROJECT_DIR="$T" bash .claude/hooks/update-check.sh 2>/dev/null || true)"
+[ "$(ls "$T/.claude/skills" | wc -l | tr -d ' ')" -ge 15 ] || fail "скиллов меньше 15"
+out="$(cd "$T" && CLAUDE_PROJECT_DIR="$T" LOFT_NO_UPDATE_CHECK=0 \
+       bash .claude/hooks/update-check.sh 2>/dev/null || true)"
 case "$out" in *"доступна версия"*) fail "update-check шумит на собственной версии" ;; esac
 [ -f "$T/.claude/skills/ingest-confluence/scripts/convert.py" ] || fail "нет конвертера"
 [ -f "$T/.claude/skills/ingest-confluence/scripts/fix_tables.py" ] || fail "нет постпроцессора таблиц"
