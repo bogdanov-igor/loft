@@ -17,13 +17,18 @@ fi
 SPECOS_PREV=0
 if [ -e "$DEST/.claude" ] || [ -L "$DEST/.claude" ]; then
   grep -qs 'specos-managed' "$DEST/.claude/CLAUDE.md" && SPECOS_PREV=1
-  BAK="$DEST/.claude.bak.$(date +%Y%m%d%H%M%S)"
+  # Имя бэкапа уникально: два запуска в одну секунду иначе вкладывают новый
+  # бэкап внутрь старого (mv в существующий каталог), и прежний .claude
+  # оказывается на два уровня глубже, чем сказано в сообщении.
+  BAKBASE="$DEST/.claude.bak.$(date +%Y%m%d%H%M%S)"
+  BAK="$BAKBASE"; n=2
+  while [ -e "$BAK" ]; do BAK="$BAKBASE-$n"; n=$((n+1)); done
   mv "$DEST/.claude" "$BAK"
   echo "loft: прежний .claude перемещён в ${BAK##*/}"
 fi
 cp -R "$SRC/bundle/.claude" "$DEST/.claude"
 tr -d '[:space:]' < "$SRC/VERSION" > "$DEST/.claude/VERSION"
-chmod +x "$DEST/.claude/hooks/"*.sh "$DEST/.claude/skills/migrate-specos/sweep.sh"
+find "$DEST/.claude" -name "*.sh" -exec chmod +x {} +
 
 # Скиллы проекта переживают переустановку: каталоги скиллов, которых ядро
 # не поставляет, переносятся из прежнего .claude. Исключение — прежний
@@ -80,11 +85,44 @@ if [ -n "${BAK:-}" ] && [ -d "$BAK/agents" ] && [ ! -f "$BAK/_protocol.md" ]; th
     && echo "loft: specos без wire-списка агентов — агенты остались в бэкапе; нужные проектные перенеси руками"
 fi
 
+# Пользовательская настройка Claude Code переживает переустановку: разрешения
+# (settings.local.json), свои команды и правила, свои output-styles. Ядро их не
+# поставляет — кроме output-styles/analyst.md, поэтому переносим пофайлово, а не
+# каталогом. specos-овские commands/rules проектными не считаем: они остаются в
+# бэкапе вместе с остальной машинерией.
+restored_cfg=""
+if [ -n "${BAK:-}" ]; then
+  if [ -f "$BAK/settings.local.json" ] && [ ! -f "$DEST/.claude/settings.local.json" ]; then
+    cp "$BAK/settings.local.json" "$DEST/.claude/settings.local.json"
+    restored_cfg="$restored_cfg settings.local.json"
+  fi
+  if [ "$SPECOS_PREV" -eq 0 ]; then
+    for d in commands rules; do
+      [ -d "$BAK/$d" ] && [ ! -e "$DEST/.claude/$d" ] || continue
+      cp -R "$BAK/$d" "$DEST/.claude/$d"
+      restored_cfg="$restored_cfg $d/"
+    done
+  fi
+  if [ -d "$BAK/output-styles" ]; then
+    mkdir -p "$DEST/.claude/output-styles"
+    for f in "$BAK/output-styles"/*; do
+      [ -f "$f" ] || continue
+      name="$(basename "$f")"
+      [ -e "$DEST/.claude/output-styles/$name" ] && continue
+      cp "$f" "$DEST/.claude/output-styles/$name"
+      restored_cfg="$restored_cfg output-styles/$name"
+    done
+  fi
+  [ -n "$restored_cfg" ] && echo "loft: перенесена пользовательская настройка:$restored_cfg"
+fi
+
 # Сиды: создаём только отсутствующее — состояние проекта не перезаписывается.
 mkdir -p "$DEST/memory/lessons" "$DEST/memory/antipatterns" \
          "$DEST/memory/patterns" "$DEST/memory/structures" \
-         "$DEST/stages" "$DEST/spec" "$DEST/inbox"
-for d in memory/lessons memory/antipatterns memory/patterns memory/structures stages spec inbox; do
+         "$DEST/stages" "$DEST/spec" "$DEST/spec/_reference" "$DEST/spec/_reviews" \
+         "$DEST/inbox" "$DEST/inbox/done"
+for d in memory/lessons memory/antipatterns memory/patterns memory/structures \
+         stages spec spec/_reference spec/_reviews inbox inbox/done; do
   touch "$DEST/$d/.gitkeep"
 done
 for f in BACKLOG.md QUESTIONS.md; do
@@ -92,8 +130,13 @@ for f in BACKLOG.md QUESTIONS.md; do
 done
 [ -f "$DEST/memory/MEMORY.md" ] || cp "$SRC/bundle/seed/MEMORY.md" "$DEST/memory/MEMORY.md"
 
-# Секреты — вне git (правило 8 контракта).
+# Секреты — вне git (правило 8 контракта). Файл без завершающего перевода
+# строки — обычное дело; дописать в него вслепую значит склеить последний
+# паттерн со своим и испортить оба.
 touch "$DEST/.gitignore"
+if [ -s "$DEST/.gitignore" ] && [ -n "$(tail -c 1 "$DEST/.gitignore")" ]; then
+  printf '\n' >> "$DEST/.gitignore"
+fi
 grep -qxF ".secrets.env" "$DEST/.gitignore" || printf '%s\n' ".secrets.env" >> "$DEST/.gitignore"
 
 # Граф корпуса: [[wikilinks]] — это Foam/Obsidian-формат; рекомендация
@@ -107,14 +150,65 @@ fi
 # MCP: loft не тянет серверов. Специальный случай — specos'овский .mcp.json
 # (serena+playwright+memory = ~20–30k токенов схем в каждой сессии): уводим
 # в бэкап, MCP-налог не переезжает. Прочие .mcp.json не трогаем.
+#
+# specos'овским считается конфиг, где сам сервер specos'овский: имя сервера со
+# словом specos или путь запуска с компонентом specos (specos/, .specos/,
+# specos-0.8/). Грепа по слову мало — «мигрировано со specos» в комментарии или
+# в env уводило в бэкап чужой рабочий конфиг. Не разобрали JSON — не трогаем.
+mcp_kind() {
+  python3 - "$1" <<'PY' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(2)
+srv = d.get("mcpServers")
+if not isinstance(srv, dict):
+    sys.exit(2)
+
+def specos_path(value):
+    for comp in str(value).replace("\\", "/").split("/"):
+        c = comp.lower()
+        if c in ("specos", ".specos") or c.startswith(("specos-", "specos_", "specos.")):
+            return True
+    return False
+
+for name, cfg in srv.items():
+    if "specos" in str(name).lower():
+        print("specos"); sys.exit(0)
+    values = []
+    if isinstance(cfg, dict):
+        for key in ("command", "cwd", "url"):
+            if cfg.get(key) is not None:
+                values.append(cfg[key])
+        args = cfg.get("args")
+        if isinstance(args, list):
+            values += args
+        env = cfg.get("env")
+        if isinstance(env, dict):
+            values += list(env.keys())
+    else:
+        values.append(cfg)
+    for v in values:
+        if specos_path(v):
+            print("specos"); sys.exit(0)
+print("other")
+PY
+}
 if [ -f "$DEST/.mcp.json" ]; then
-  if grep -q 'specos' "$DEST/.mcp.json" 2>/dev/null; then
-    MBAK="$DEST/.mcp.json.bak.$(date +%Y%m%d%H%M%S)"
-    mv "$DEST/.mcp.json" "$MBAK"
-    echo "loft: specos'овский .mcp.json перемещён в ${MBAK##*/} — свои серверы, если были, верни руками"
-  else
-    echo "loft: .mcp.json оставлен как есть — проверь, нужны ли его серверы этому проекту (каждый стоит токенов схем в каждой сессии)"
-  fi
+  MCPKIND="$(mcp_kind "$DEST/.mcp.json" || true)"
+  case "$MCPKIND" in
+    specos)
+      MBAKBASE="$DEST/.mcp.json.bak.$(date +%Y%m%d%H%M%S)"
+      MBAK="$MBAKBASE"; n=2
+      while [ -e "$MBAK" ]; do MBAK="$MBAKBASE-$n"; n=$((n+1)); done
+      mv "$DEST/.mcp.json" "$MBAK"
+      echo "loft: specos'овский .mcp.json перемещён в ${MBAK##*/} — свои серверы, если были, верни руками" ;;
+    other)
+      echo "loft: .mcp.json оставлен как есть — проверь, нужны ли его серверы этому проекту (каждый стоит токенов схем в каждой сессии)" ;;
+    *)
+      echo "loft: .mcp.json не разобрался (битый JSON или нестандартная схема) — оставлен как есть; если это конфиг specos, убери его руками" ;;
+  esac
 fi
 
 # Остатки прежних систем: только детект — уборка это работа скилла
@@ -130,11 +224,23 @@ if report="$(cd "$DEST" && CLAUDE_PROJECT_DIR="$DEST" bash .claude/skills/migrat
 fi
 
 # Самопроверка установки: рухнуть здесь лучше, чем молча отдать битое ядро.
-selfcheck_fail() { echo "loft: САМОПРОВЕРКА ПРОВАЛЕНА — $1" >&2; exit 1; }
+# Рухнув, откатываемся: полуустановленное ядро на месте рабочего — худшее из
+# состояний, а владелец не обязан помнить, как называется бэкап.
+selfcheck_fail() {
+  echo "loft: САМОПРОВЕРКА ПРОВАЛЕНА — $1" >&2
+  if [ -n "${BAK:-}" ] && [ -d "$BAK" ]; then
+    rm -rf "$DEST/.claude"
+    mv "$BAK" "$DEST/.claude"
+    echo "loft: установка откачена — прежний .claude вернулся на место из ${BAK##*/}" >&2
+  else
+    echo "loft: прежнего .claude не было; неудачная установка осталась в $DEST/.claude — удали каталог перед повторной попыткой" >&2
+  fi
+  exit 1
+}
 [ -f "$DEST/.claude/CLAUDE.md" ] || selfcheck_fail "нет контракта"
 [ -x "$DEST/.claude/hooks/leak-guard.sh" ] && [ -x "$DEST/.claude/hooks/update-check.sh" ] \
   || selfcheck_fail "хуки не исполняемые"
-[ "$(ls "$DEST/.claude/skills" | wc -l | tr -d ' ')" -ge 14 ] || selfcheck_fail "скиллов меньше 14"
+[ "$(ls "$DEST/.claude/skills" | wc -l | tr -d ' ')" -ge 15 ] || selfcheck_fail "скиллов меньше 15"
 # проверяем, что скрипт РАБОТАЕТ, на пустой площадке: на живом проекте
 # link_check честно выходит с кодом 1 при битых ссылках — это не поломка
 SCTMP="$(mktemp -d)"
@@ -147,4 +253,4 @@ echo "loft $(cat "$SRC/VERSION") установлен в $DEST"
 case "$SRC" in
   "$DEST"/*) echo "loft: каталог loft/ можно оставить для обновлений (повторный запуск скрипта) или удалить; добавь loft/ в .gitignore" ;;
 esac
-echo "далее: открой проект в Claude Code; конвертеру нужны pandoc и python3+lxml (только для ingest-*)"
+echo "далее: открой проект в Claude Code. pandoc нужен ingest-confluence, ingest-docs, review-intake и deliver-pdf; lxml — только ingest-confluence"

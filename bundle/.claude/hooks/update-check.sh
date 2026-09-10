@@ -44,25 +44,33 @@ for src in "$PROJECT/loft/VERSION" "${LOFT_HOME:+$LOFT_HOME/VERSION}"; do
   [ -n "$src" ] && [ -f "$src" ] && consider "$(tr -d '[:space:]' < "$src")"
 done
 
-# GitHub releases: latest tag, кэш суточный.
+# GitHub releases: latest tag. Кэш суточный при удачном ответе и часовой при
+# неудачном (негативный кэш): без него каждый старт сессии в поезде или за
+# фаерволом стоил бы владельцу 3 секунды ожидания curl.
+# Ни XDG_CACHE_HOME, ни HOME могут быть не заданы — тогда кэшу негде жить и
+# проверка релизов просто пропускается (локальные источники остаются).
 REPO="${LOFT_UPDATE_REPO:-bogdanov-igor/loft}"
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/loft"
+CACHE_HOME="${XDG_CACHE_HOME:-}"
+[ -n "$CACHE_HOME" ] || CACHE_HOME="${HOME:+$HOME/.cache}"
+CACHE_DIR=""
+[ -n "$CACHE_HOME" ] && CACHE_DIR="$CACHE_HOME/loft"
 CACHE="$CACHE_DIR/latest-${REPO//\//-}"
-if mkdir -p "$CACHE_DIR" 2>/dev/null; then
-  now="$(date +%s)"; fresh=0
+if [ -n "$CACHE_DIR" ] && mkdir -p "$CACHE_DIR" 2>/dev/null; then
+  now="$(date +%s)"; fresh=0; REMOTE=""
   if [ -f "$CACHE" ]; then
     ts="$(sed -n 1p "$CACHE" 2>/dev/null)"
     case "$ts" in ''|*[!0-9]*) ts=0 ;; esac
-    [ $(( now - ts )) -lt 86400 ] && fresh=1
-  fi
-  if [ "$fresh" -eq 1 ]; then
     REMOTE="$(sed -n 2p "$CACHE" 2>/dev/null)"
-  else
+    ttl=86400
+    [ -n "$REMOTE" ] || ttl=3600
+    [ $(( now - ts )) -lt "$ttl" ] && fresh=1
+  fi
+  if [ "$fresh" -ne 1 ]; then
     REMOTE="$(curl -fsSL -m 3 \
       -H 'Accept: application/vnd.github+json' \
       "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
       | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)"
-    [ -n "$REMOTE" ] && printf '%s\n%s\n' "$now" "$REMOTE" > "$CACHE" 2>/dev/null
+    printf '%s\n%s\n' "$now" "$REMOTE" > "$CACHE" 2>/dev/null
   fi
   consider "${REMOTE:-}"
 fi

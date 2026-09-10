@@ -25,6 +25,10 @@ Shared by convert.py (v2) and fix_tables.py. Design rules:
   the rest with "" (layout loss, never data loss);
 - empty attachment anchors (<a ...></a>): text from data-linked-resource-default-alias,
   else aria-label, else basename(href) -- fill_empty_anchors()/anchor_fallback_text().
+- optional md-cell mode (table_to_gfm(..., md_cells=True), used by fix_tables on
+  an ALREADY converted wiki): a cell whose text already carries markdown
+  ([[wikilink]], **bold**, `code`) is not escaped -- only "|" is. Off by default,
+  so a fresh export (convert.py) keeps escaping every cell as plain text.
 """
 import os, re, html, base64
 import urllib.parse
@@ -57,11 +61,16 @@ class Fallback(Exception):
 
 # ---------------------------------------------------------------- escaping
 _MD_ESC = re.compile(r"([\\`*_\[\]<|])")
+# a cell of an already-converted wiki may hold markdown: escaping it makes junk
+_MD_HINT = re.compile(r"\[\[[^\]\n]+\]\]|\*\*|`")
+_md_cell = False        # set per cell by cell_md(md_text=True); see module doc
 
 def esc_text(s):
     """Plain text node -> markdown-safe inline text (whitespace collapsed)."""
     s = s.replace("\xa0", " ")
     s = re.sub(r"\s+", " ", s)
+    if _md_cell:                               # already markdown: only "|" splits a row
+        return re.sub(r"(?<!\\)\|", r"\\|", s)
     s = _MD_ESC.sub(r"\\\1", s)
     s = re.sub(r"&(?=#|\w+;)", r"\\&", s)      # only entity-lookalikes need escaping
     s = s.replace("~~", "\\~\\~")
@@ -244,8 +253,19 @@ def _render_list(lst, depth):
 
 
 # ---------------------------------------------------------------- cell -> md
-def cell_md(cell):
-    """Render one <td>/<th> to a single-line markdown string. May raise Fallback."""
+def cell_md(cell, md_text=False):
+    """Render one <td>/<th> to a single-line markdown string. May raise Fallback.
+    md_text=True: when the cell text already looks like markdown ([[link]], **,
+    `code`), plain text nodes are passed through and only "|" is escaped."""
+    global _md_cell
+    _md_cell = bool(md_text) and bool(_MD_HINT.search("".join(cell.itertext())))
+    try:
+        return _cell_md(cell)
+    finally:
+        _md_cell = False
+
+
+def _cell_md(cell):
     blocks = []
     cur = []
 
@@ -280,14 +300,17 @@ def _span(cell, attr):
     return int(v) if v.isdigit() and int(v) > 1 else 1
 
 
-def table_to_gfm(table, indent="", unroll_pre=False, expand_spans=False):
+def table_to_gfm(table, indent="", unroll_pre=False, expand_spans=False,
+                 md_cells=False):
     """lxml <table> element -> GFM pipe table (string). Raises Fallback when a
     lossless conversion is impossible (caller keeps the raw HTML and logs).
     unroll_pre=True: multiline-pre cells no longer raise -- each becomes
     "см. Пример N ниже" and the code bodies are appended after the table as
     bold-labelled fenced blocks (see module docstring).
     expand_spans=True: colspan/rowspan cells no longer raise -- rowspan repeats
-    the value on every spanned row, colspan pads the span with "" cells."""
+    the value on every spanned row, colspan pads the span with "" cells.
+    md_cells=True: cells that already carry markdown are not escaped (see the
+    module docstring); only fix_tables (already-converted wiki) passes it."""
     global _unroll
     if table.xpath(".//table"):
         raise Fallback("nested-table")
@@ -321,7 +344,7 @@ def table_to_gfm(table, indent="", unroll_pre=False, expand_spans=False):
                     continue
                 c = queue.pop(0)
                 k = len(_unroll) if _unroll is not None else 0
-                txt = cell_md(c)
+                txt = cell_md(c, md_cells)
                 if _unroll is not None:          # bind fresh examples to a cell
                     for e in _unroll[k:]:
                         e["row"], e["col"] = len(rows), col
