@@ -34,6 +34,9 @@ FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})(.*)$")
 LIST_ITEM = re.compile(r"^[ \t]{0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)")
 TITLE_TAIL = re.compile(r"""[ \t]+(?:"[^"]*"|'[^']*'|\([^()]*\))[ \t]*$""")
 SKIP_SCHEMES = ("http://", "https://", "mailto:", "tel:")
+# любая схема URI (RFC 3986): по ней узнаём внешнюю ссылку для
+# предупреждения о непроэкранированных «(»/«)»/пробеле в её url
+URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 # --- цели фрагментов (#якорей) на странице -----------------------------------
 HEADING_TEXT = re.compile(r"^ {0,3}#{1,6}[ \t]+(.*?)[ \t]*$")
 ATX_CLOSE = re.compile(r"[ \t]+#+[ \t]*$")     # закрывающая решётка «## X ##»
@@ -192,13 +195,18 @@ def realpath(path, _cache={}):
 
 def md_targets(line):
     """Назначения [текст](путь) и ![alt](путь): <путь с пробелами>,
-    парные скобки в имени файла, экранированные скобки, title в кавычках."""
+    парные скобки в имени файла, экранированные скобки, title в кавычках.
+    Отдаёт пары (цель, предупреждения): у url со схемой (http, mailto и
+    прочие), не взятого в <…>, непроэкранированные «(», «)» или пробел —
+    такую ссылку рвут Confluence и наивные md-рендеры, хоть здесь она и
+    резолвится верно (парные скобки посчитаны)."""
     out, n = [], len(line)
     for m in LINK_OPEN.finditer(line):
         i = m.end()
         while i < n and line[i] in " \t":
             i += 1
-        if i < n and line[i] == "<":
+        angle = i < n and line[i] == "<"
+        if angle:
             j = line.find(">", i + 1)
             if j < 0 or line.find(")", j + 1) < 0:
                 continue
@@ -221,8 +229,15 @@ def md_targets(line):
                 continue
             dest = TITLE_TAIL.sub("", line[i:j])
         dest = dest.strip().replace("\\(", "(").replace("\\)", ")").replace("\\ ", " ")
-        if dest:
-            out.append(dest)
+        if not dest:
+            continue
+        warns = []
+        if not angle and URL_SCHEME.match(dest):
+            if "(" in dest or ")" in dest:
+                warns.append("скобки в url без экранирования")
+            if " " in dest:
+                warns.append("пробел в url")
+        out.append((dest, warns))
     return out
 
 
@@ -317,6 +332,7 @@ def scan(path, index, state):
     """Один проход по файлу: снимает код и комментарии, отдаёт ссылки и
     попутно — якоря самой страницы (второй раз файл не читается)."""
     total, broken, incoming, ambiguous, anchors = state[:5]
+    warns_count = state[6]
     names = anchors.setdefault(realpath(path), set())
     in_fence, fence_ch, fence_len = False, "", 0
     in_comment = in_code_indent = in_list = False
@@ -402,7 +418,11 @@ def scan(path, index, state):
                                   path, lineno, state)
                 else:
                     broken.append((path, lineno, "[[%s]]" % t))
-            for href in md_targets(masked):
+            for href, warns in md_targets(masked):
+                for reason in warns:
+                    warns_count[0] += 1
+                    sys.stderr.write("WARN %s:%d → %s  (%s)\n"
+                                      % (path, lineno, href, reason))
                 check_rel(href, path, lineno, state)
     # [текст][ref] без определения — не битая ссылка, а вероятная опечатка:
     # цели у неё нет вовсе, и в скобках мог оказаться обычный текст
@@ -439,8 +459,8 @@ def main(argv):
     index = build_index(roots)
     md_files = index[0]
     total, broken, incoming, ambiguous = [0], [], set(), set()
-    anchors, pending = {}, []
-    state = (total, broken, incoming, ambiguous, anchors, pending)
+    anchors, pending, warns_count = {}, [], [0]
+    state = (total, broken, incoming, ambiguous, anchors, pending, warns_count)
     for path in md_files:
         scan(path, index, state)
 
@@ -466,6 +486,8 @@ def main(argv):
                % (total[0], len(broken), len(orphans)))
     if missing:   # без ненайденных якорей сводка выглядит как раньше
         summary += " · якорей не найдено: %d" % missing
+    if warns_count[0]:   # без предупреждений сводка выглядит как раньше
+        summary += " · предупреждений: %d" % warns_count[0]
     print(summary)
     for path, lineno, target in broken:
         print("BROKEN  %s:%d → %s" % (path, lineno, target))

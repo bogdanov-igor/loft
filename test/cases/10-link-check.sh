@@ -120,7 +120,7 @@ Percent: [t](с%20пробелом.md)
 Голый пробел: [t](с пробелом.md)
 Скобка в имени: [t](файл(1).md)
 С подсказкой: [t](b.md "подсказка")
-Внешняя: [t](https://example.com/a b)
+Внешняя: [t](https://example.com/a-b)
 Якорь: [t](b.md#раздел)
 Битая: [t](<нет такого.md>)
 EOF
@@ -129,6 +129,7 @@ has "ссылок проверено: 7 · битых: 1" "$out" "пробелы
 has "нет такого.md" "$out" "битая ссылка с пробелом видна в отчёте"
 hasnt "example.com" "$out" "внешние ссылки не проверяются"
 hasnt "якорей не найдено" "$out" "сводка без ненайденных якорей прежняя"
+hasnt "WARN" "$out" "относительная ссылка со скобками в имени файла не даёт предупреждения"
 
 # ── link_check: сироты и разбор флагов ─────────────────────────────────────
 section "link_check — сироты и флаги"
@@ -254,3 +255,27 @@ has "BROKEN  spec/src.md:9 → [[цель#В-фенсе-не-якорь]]  (як
 has "ORPHAN  spec/src.md" "$out" "[[#якорь]] не засчитывается себе как входящая"
 hasnt "ORPHAN  spec/цель.md" "$out" "страница с ненайденным якорем не сирота"
 [ "$rc" -eq 1 ] && ok || bad "exit 1 при ненайденном якоре (got $rc)"
+
+# ── link_check: предупреждение о скобках и пробеле в url ───────────────────
+# Внешний url со схемой (http, mailto и прочие), не взятый в <…>: буквальные
+# «(»/«)» или пробел рвут ссылку в Confluence и наивных md-рендерах, хоть
+# здесь она резолвится верно (парные скобки посчитаны). Это WARN, не BROKEN.
+section "link_check — предупреждение о скобках и пробеле в url"
+L9="$TMP/lc9"; mkdir -p "$L9/spec"
+cat > "$L9/spec/warn.md" <<'EOF'
+Скобки: [t](https://example.org/pages/Подтверждение+платежа+(списание))
+В угловых: [t](<https://example.org/скобки+(ок)>)
+Percent: [t](https://example.org/percent-%28ok%29)
+Пробел: [t](https://example.org/path with space)
+EOF
+out="$(cd "$L9" && python3 "$LCP" spec --no-orphans 2>&1)"; rc=$?
+has "WARN spec/warn.md:1 → https://example.org/pages/Подтверждение+платежа+(списание)  (скобки в url без экранирования)" \
+  "$out" "непроэкранированные скобки в url — предупреждение"
+hasnt "spec/warn.md:2" "$out" "url в <…> предупреждения не даёт"
+hasnt "spec/warn.md:3" "$out" "%28/%29 предупреждения не даёт"
+has "WARN spec/warn.md:4 → https://example.org/path with space  (пробел в url)" \
+  "$out" "пробел в url — предупреждение"
+has "предупреждений: 2" "$out" "счётчик предупреждений в сводке"
+[ "$rc" -eq 0 ] && ok || bad "предупреждения не меняют exit code (got $rc)"
+out="$(cd "$L9" && python3 "$LCP" spec --no-orphans 2>/dev/null)"
+hasnt "WARN" "$out" "предупреждения о скобках/пробеле идут в stderr, не в отчёт"
