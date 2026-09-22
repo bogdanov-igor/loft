@@ -20,7 +20,7 @@
 
 ```sh
 cd /path/to/project
-shasum -c loft_1.3.0.tgz.sha256 && tar -xzf loft_1.3.0.tgz
+shasum -c loft_1.3.1.tgz.sha256 && tar -xzf loft_1.3.1.tgz
 bash loft/install.sh
 ```
 

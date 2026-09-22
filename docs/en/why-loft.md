@@ -73,7 +73,7 @@ no vendoring.
 
 ## What loft is instead
 
-One always-on contract (108 lines, ~3k tokens), 15 skills that load when
+One always-on contract (140 lines, ~3k tokens), 15 skills that load when
 used, 2 subagents split by context isolation, 2 hooks, file memory with a
 one-line index, zero runtime services. What keeps the kernel from growing
 back into a system is the boundary rule: a script in the kernel may only be a

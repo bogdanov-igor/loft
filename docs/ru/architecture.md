@@ -7,7 +7,7 @@
 
 ## Контракт
 
-[`.claude/CLAUDE.md`](../../bundle/.claude/CLAUDE.md) — 108 строк, ~3k
+[`.claude/CLAUDE.md`](../../bundle/.claude/CLAUDE.md) — 140 строк, ~3k
 токенов, всегда в контексте и единственное, что в нём всегда. В нём три
 вещи.
 
