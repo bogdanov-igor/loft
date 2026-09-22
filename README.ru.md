@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.1-d89a4a?style=flat-square" alt="версия 1.3.1">
+  <img src="https://img.shields.io/badge/version-1.3.2-d89a4a?style=flat-square" alt="версия 1.3.2">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-396%20KB%20%C2%B7%2032%20%D1%84%D0%B0%D0%B9%D0%BB%D0%B0-success?style=flat-square" alt="396 КБ, 32 файла">
   <img src="https://img.shields.io/badge/%D1%81%D0%BA%D0%B8%D0%BB%D0%BB%D0%BE%D0%B2-15-success?style=flat-square" alt="15 скиллов">
   <img src="https://img.shields.io/badge/%D1%81%D0%B5%D1%80%D0%B2%D0%B8%D1%81%D0%BE%D0%B2%20%D0%B2%20%D1%80%D0%B0%D0%BD%D1%82%D0%B0%D0%B9%D0%BC%D0%B5-0-success?style=flat-square" alt="ноль сервисов в рантайме">
-  <img src="https://img.shields.io/badge/%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82-140%20%D1%81%D1%82%D1%80%D0%BE%D0%BA-success?style=flat-square" alt="контракт 140 строк">
+  <img src="https://img.shields.io/badge/%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82-173%20%D1%81%D1%82%D1%80%D0%BE%D0%BA-success?style=flat-square" alt="контракт 173 строк">
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ Loft пришёл на смену specos: ту систему я закопал 
 
 ## Быстрый старт
 
-**1.** Скачайте `loft_1.3.1.tgz` и `loft_1.3.1.tgz.sha256` из
+**1.** Скачайте `loft_1.3.2.tgz` и `loft_1.3.2.tgz.sha256` из
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) в папку
 проекта.
 
@@ -54,8 +54,8 @@ Loft пришёл на смену specos: ту систему я закопал 
 
 ```sh
 cd /path/to/project                    # сюда скопированы tgz + .sha256
-shasum -c loft_1.3.1.tgz.sha256        # сначала целостность: ждём "OK"
-tar -xzf loft_1.3.1.tgz
+shasum -c loft_1.3.2.tgz.sha256        # сначала целостность: ждём "OK"
+tar -xzf loft_1.3.2.tgz
 bash loft/install.sh                   # без аргумента = ставим прямо здесь
 ```
 
@@ -92,7 +92,7 @@ Claude Code переносятся. Хук на старте сессии печ
 
 ## Что внутри
 
-- Контракт [`.claude/CLAUDE.md`](bundle/.claude/CLAUDE.md): 140 строк, ~3k
+- Контракт [`.claude/CLAUDE.md`](bundle/.claude/CLAUDE.md): 173 строк, ~3k
   токенов — единственное, что всегда в контексте: профессия, для кого пишем,
   указатели на остальное. Процедуры живут в скиллах и грузятся при обращении.
   Главное правило прямо там: ни одного выдуманного факта — утверждение

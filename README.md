@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.1-d89a4a?style=flat-square" alt="version 1.3.1">
+  <img src="https://img.shields.io/badge/version-1.3.2-d89a4a?style=flat-square" alt="version 1.3.2">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/kernel-396%20KB%20%C2%B7%2032%20files-success?style=flat-square" alt="396 KB, 32 files">
   <img src="https://img.shields.io/badge/skills-15-success?style=flat-square" alt="15 skills">
   <img src="https://img.shields.io/badge/runtime%20services-0-success?style=flat-square" alt="zero runtime services">
-  <img src="https://img.shields.io/badge/contract-140%20lines-success?style=flat-square" alt="140-line contract">
+  <img src="https://img.shields.io/badge/contract-173%20lines-success?style=flat-square" alt="173-line contract">
 </p>
 
 <p align="center">
@@ -45,7 +45,7 @@ The post-mortem — including what was measured and what wasn't — is in
 
 ## Quickstart
 
-**1.** Download `loft_1.3.1.tgz` and `loft_1.3.1.tgz.sha256` from
+**1.** Download `loft_1.3.2.tgz` and `loft_1.3.2.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -62,8 +62,8 @@ project folder.
 
 ```sh
 cd /path/to/project                    # tgz + .sha256 copied here
-shasum -c loft_1.3.1.tgz.sha256        # integrity first: expect "OK"
-tar -xzf loft_1.3.1.tgz
+shasum -c loft_1.3.2.tgz.sha256        # integrity first: expect "OK"
+tar -xzf loft_1.3.2.tgz
 bash loft/install.sh                   # no argument = install right here
 ```
 
@@ -104,7 +104,7 @@ why.
 
 ## What's inside
 
-- The contract, [`.claude/CLAUDE.md`](bundle/.claude/CLAUDE.md): 140 lines, ~3k
+- The contract, [`.claude/CLAUDE.md`](bundle/.claude/CLAUDE.md): 173 lines, ~3k
   tokens — the only thing always in context: the profession, who we write for,
   pointers to the rest. Procedures live in skills and load when used. The core
   rule is right there: no invented facts — a claim either follows from a source

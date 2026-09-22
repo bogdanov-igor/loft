@@ -12,7 +12,7 @@
 
 ## Быстрый старт
 
-**1.** Скачайте `loft_1.3.1.tgz` и `loft_1.3.1.tgz.sha256` из
+**1.** Скачайте `loft_1.3.2.tgz` и `loft_1.3.2.tgz.sha256` из
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) в папку
 проекта.
 
@@ -33,8 +33,8 @@
 
 ```sh
 cd /path/to/project                 # оба файла скопированы сюда
-shasum -c loft_1.3.1.tgz.sha256     # сначала целостность: ждём "OK"
-tar -xzf loft_1.3.1.tgz
+shasum -c loft_1.3.2.tgz.sha256     # сначала целостность: ждём "OK"
+tar -xzf loft_1.3.2.tgz
 bash loft/install.sh                # без аргумента = ставим в этот каталог
 ```
 
