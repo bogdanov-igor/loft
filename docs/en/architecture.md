@@ -7,7 +7,7 @@ co-author analyst. Everything else follows from that.
 
 ## The contract
 
-[`.claude/CLAUDE.md`](../../bundle/.claude/CLAUDE.md) — 173 lines, ~3k
+[`.claude/CLAUDE.md`](../../bundle/.claude/CLAUDE.md) — 148 lines, ~3k
 tokens, always in context and the only thing that always is. It fixes three
 things.
 
@@ -228,7 +228,7 @@ Two, and the split is about context isolation, not job titles:
 
 ## Hooks
 
-Two:
+Three:
 
 - `leak-guard.sh` (`PreToolUse` on `Write|Edit|NotebookEdit`) blocks a write
   whose new text carries a value from `.secrets.env` of 6 characters or more
@@ -245,6 +245,11 @@ Two:
   GitHub release. On a current version the hook says nothing, the happy path
   costs zero tokens, and any failure exits quietly. Cache and opt-out are in
   [install](install.md).
+- `stage-brief.sh` (`SessionStart` on `resume|compact`) — one line with the
+  path to the brief when a stage has `brief.md` and no `report.md`; silent
+  otherwise. The brief and its done-criteria stop getting lost after a
+  compact in a long session.
+
 
 ## Testing the kernel
 

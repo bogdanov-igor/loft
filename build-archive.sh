@@ -91,6 +91,7 @@ fail() { echo "loft: самотест архива ПРОВАЛЕН — $1 (пл
 [ -f "$T/.claude/CLAUDE.md" ]                        || fail "нет контракта"
 [ -f "$T/BACKLOG.md" ] && [ -f "$T/QUESTIONS.md" ]   || fail "сиды не посеяны"
 [ -f "$T/memory/MEMORY.md" ]                         || fail "нет индекса памяти"
+[ -f "$T/spec/_STRUCTURE.md" ]                       || fail "профиль не посеян"
 [ -d "$T/spec" ] && [ -d "$T/inbox" ]                || fail "нет каталогов корпуса"
 [ -x "$T/.claude/hooks/leak-guard.sh" ] && [ -x "$T/.claude/hooks/update-check.sh" ] \
                                                      || fail "хуки не исполняемые"

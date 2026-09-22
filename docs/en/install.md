@@ -13,7 +13,7 @@ Nothing else: no MCP server, no daemon, no index to build.
 
 ## Quickstart
 
-**1.** Download `loft_1.3.2.tgz` and `loft_1.3.2.tgz.sha256` from
+**1.** Download `loft_1.3.3.tgz` and `loft_1.3.3.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -34,8 +34,8 @@ Both paths run the same installer.
 
 ```sh
 cd /path/to/project                 # copy both files here
-shasum -c loft_1.3.2.tgz.sha256     # verify integrity first: expect "OK"
-tar -xzf loft_1.3.2.tgz
+shasum -c loft_1.3.3.tgz.sha256     # verify integrity first: expect "OK"
+tar -xzf loft_1.3.3.tgz
 bash loft/install.sh                # no argument = install into this directory
 ```
 
@@ -58,7 +58,7 @@ bash loft/install.sh /path/to/project
 | Stamps the version | Writes `.claude/VERSION`, which the update check reads. |
 | Preserves your skills and agents | Skill directories and agent files the kernel does not ship are carried over from the previous `.claude`. Exception: in a specos-managed `.claude`, specos' own skills and agents are recognized by its wire lists and stay in the backup, so the predecessor's machinery does not ride back in. |
 | Preserves your Claude Code setup | Restores `settings.local.json` (permissions), `commands/`, `rules/` and your own output styles from the backup — file by file, because `output-styles/analyst.md` is shipped by the kernel. specos' `commands/` and `rules/` do not count as yours and stay in the backup. |
-| Seeds project state | Creates `memory/` (with `lessons/antipatterns/patterns/structures`), `stages/`, `spec/`, `spec/_reference/`, `spec/_reviews/`, `inbox/`, `inbox/done/`, `BACKLOG.md`, `QUESTIONS.md`, `memory/MEMORY.md` — only where absent. Existing state is never overwritten. |
+| Seeds project state | Creates `memory/` (with `lessons/antipatterns/patterns/structures`), `stages/`, `spec/`, `spec/_reference/`, `spec/_reviews/`, `inbox/`, `inbox/done/`, `BACKLOG.md`, `QUESTIONS.md`, `memory/MEMORY.md`, `spec/_STRUCTURE.md` (a profile with a ready "Voice" section) — only where absent. Existing state is never overwritten. |
 | Protects secrets | Adds `.secrets.env` to `.gitignore`. A file with no trailing newline gets one first, or the last pattern would run into the new one. |
 | Seeds the corpus graph | Creates `.vscode/extensions.json` recommending Foam and a mermaid preview — the graph and backlinks in VS Code in one click. Only when no recommendations file exists yet. |
 | Drops the MCP tax | A specos-era `.mcp.json` (serena + playwright + memory ≈ 20–30k tokens of schemas per session) is moved to backup; your own servers, if any, you restore by hand. A config counts as specos' when a server itself is specos' — by name or by launch path, not by any mention of the word in a comment. Any other `.mcp.json` is left as is, with a reminder that every server costs schema tokens in every session. |

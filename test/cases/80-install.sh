@@ -152,3 +152,13 @@ else
     section "build-archive — под GNU tar ПРОПУЩЕНО (нет gnu-tar/gnubin)"
   fi
 fi
+
+# ── install: сид профиля документации ────────────────────────────────────────
+section "install — сид spec/_STRUCTURE.md"
+I3="$TMP/i3"; mkdir -p "$I3"
+bash "$REPO/install.sh" "$I3" >/dev/null 2>&1
+[ -f "$I3/spec/_STRUCTURE.md" ] && ok || bad "свежая установка сеет spec/_STRUCTURE.md"
+has "## Голос" "$(cat "$I3/spec/_STRUCTURE.md")" "в сиде есть секция «Голос»"
+echo "# мой профиль" > "$I3/spec/_STRUCTURE.md"
+bash "$REPO/install.sh" "$I3" >/dev/null 2>&1
+[ "$(cat "$I3/spec/_STRUCTURE.md")" = "# мой профиль" ] && ok || bad "переустановка не перезаписывает профиль"
