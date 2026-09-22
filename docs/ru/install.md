@@ -12,7 +12,7 @@
 
 ## Быстрый старт
 
-**1.** Скачайте `loft_1.3.2.tgz` и `loft_1.3.2.tgz.sha256` из
+**1.** Скачайте `loft_1.3.3.tgz` и `loft_1.3.3.tgz.sha256` из
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) в папку
 проекта.
 
@@ -33,8 +33,8 @@
 
 ```sh
 cd /path/to/project                 # оба файла скопированы сюда
-shasum -c loft_1.3.2.tgz.sha256     # сначала целостность: ждём "OK"
-tar -xzf loft_1.3.2.tgz
+shasum -c loft_1.3.3.tgz.sha256     # сначала целостность: ждём "OK"
+tar -xzf loft_1.3.3.tgz
 bash loft/install.sh                # без аргумента = ставим в этот каталог
 ```
 
@@ -57,7 +57,7 @@ bash loft/install.sh /path/to/project
 | Штампует версию | Пишет `.claude/VERSION` — его читает проверка обновлений. |
 | Сохраняет ваши скиллы и агентов | Каталоги скиллов и файлы агентов, которых ядро не поставляет, переносятся из прежнего `.claude`. Исключение — specos-managed `.claude`: его собственные скиллы и агенты опознаются по wire-спискам specos и остаются в бэкапе, чтобы машинерия предшественника не вернулась с переустановкой. |
 | Сохраняет вашу настройку Claude Code | Возвращает из бэкапа `settings.local.json` (разрешения), `commands/`, `rules/` и ваши собственные output-styles — пофайлово, потому что `output-styles/analyst.md` поставляет ядро. specos-овские `commands/` и `rules/` проектными не считаются и остаются в бэкапе. |
-| Сеет состояние проекта | Создаёт `memory/` (с `lessons/antipatterns/patterns/structures`), `stages/`, `spec/`, `spec/_reference/`, `spec/_reviews/`, `inbox/`, `inbox/done/`, `BACKLOG.md`, `QUESTIONS.md`, `memory/MEMORY.md` — только там, где их нет. Существующее состояние не перезаписывается. |
+| Сеет состояние проекта | Создаёт `memory/` (с `lessons/antipatterns/patterns/structures`), `stages/`, `spec/`, `spec/_reference/`, `spec/_reviews/`, `inbox/`, `inbox/done/`, `BACKLOG.md`, `QUESTIONS.md`, `memory/MEMORY.md`, `spec/_STRUCTURE.md` (профиль с готовой секцией «Голос») — только там, где их нет. Существующее состояние не перезаписывается. |
 | Защищает секреты | Добавляет `.secrets.env` в `.gitignore`. Файл без завершающего перевода строки сначала дописывается им, иначе последний паттерн склеился бы с новым. |
 | Сеет граф корпуса | Создаёт `.vscode/extensions.json` с рекомендацией Foam и mermaid-превью — граф и обратные ссылки в VS Code одним кликом. Только если файла рекомендаций ещё нет. |
 | Убирает MCP-налог | specos'овский `.mcp.json` (serena + playwright + memory ≈ 20–30k токенов схем на сессию) уводится в бэкап; свои серверы, если были, вы возвращаете руками. specos'овским считается конфиг, где specos'овский сам сервер — имя или путь запуска, а не любое упоминание слова в комментарии. Любой другой `.mcp.json` остаётся как есть, с напоминанием: каждый сервер стоит токенов схем в каждой сессии. |

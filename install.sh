@@ -129,6 +129,8 @@ for f in BACKLOG.md QUESTIONS.md; do
   [ -f "$DEST/$f" ] || cp "$SRC/bundle/seed/$f" "$DEST/$f"
 done
 [ -f "$DEST/memory/MEMORY.md" ] || cp "$SRC/bundle/seed/MEMORY.md" "$DEST/memory/MEMORY.md"
+# Профиль документации: голос с умолчаниями ядра, структуру заполняет владелец.
+[ -f "$DEST/spec/_STRUCTURE.md" ] || cp "$SRC/bundle/seed/_STRUCTURE.md" "$DEST/spec/_STRUCTURE.md"
 
 # Секреты — вне git (правило 8 контракта). Файл без завершающего перевода
 # строки — обычное дело; дописать в него вслепую значит склеить последний
