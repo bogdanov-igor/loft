@@ -450,3 +450,22 @@ FU="$TMP/fu"; mkdir -p "$FU"; echo "# x" > "$FU/a.md"
 out="$(python3 "$SK/ingest-confluence/scripts/fix_tables.py" "$FU" --no-such-flag 2>&1)"; rc=$?
 [ "$rc" -eq 2 ] && ok || bad "неизвестный флаг → rc=2 (got $rc)"
 has "unknown flag" "$out" "неизвестный флаг назван в сообщении"
+
+# ── fix_tables: цвет конвертера 2.5 переживает чистку атрибутов ─────────────
+section "fix_tables — цвет переживает чистку"
+FC="$TMP/ftc"; mkdir -p "$FC"
+cat > "$FC/p.md" <<'EOF'
+---
+title: Страница
+confluence_id: 1
+space: OB
+---
+Поле <span style="color:#1f845a">x</span> и шлак <span style="color: red; font-weight: bold" class="c">y</span>.
+<table class="confluenceTable"><tr><th>А</th></tr><tr><td style="background-color:#ffebe6" class="confluenceTd">да</td></tr></table>
+EOF
+python3 "$FT" "$FC" >/dev/null 2>&1
+fc="$(cat "$FC/p.md")"
+has 'Поле <span style="color:#1f845a">x</span> и шлак <span>y</span>.' "$fc" "канонический style остался, стиль Confluence снят"
+has '| <span style="background-color:#ffebe6">да</span> |' "$fc" "подсветка ячейки сырой таблицы дошла до GFM"
+python3 "$FT" "$FC" >/dev/null 2>&1
+[ "$(cat "$FC/p.md")" = "$fc" ] && ok || bad "повторный прогон идемпотентен на цвете"

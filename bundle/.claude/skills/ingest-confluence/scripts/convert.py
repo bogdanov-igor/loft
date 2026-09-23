@@ -96,6 +96,45 @@ v2.4 changes:
   page it is left as written (the page link still works);
 - pages are converted in two passes for that: bodies + anchor maps first, link
   rewriting after -- a link from page A to an anchor of page B needs B's map.
+
+v2.5 changes:
+- a link Confluence could not render (<img class="transform-error"
+  data-encoded-xml="..."> holding an <ac:link>) keeps its text: the link body
+  (ac:link-body / ac:plain-text-link-body, else the page title) is emitted, as
+  a [[wikilink]] when ri:content-title is a page of this export, else as plain
+  text logged [link-miss]. Such links used to vanish WITH their words. Other
+  placeholders are dropped as before;
+- non-default text colour and highlight survive as inline HTML:
+  <span style="color:#rrggbb">...</span> / background-color. CSS vars resolve to
+  their (innermost) fallback hex, rgb() -> hex. Default text colour (var(--ds-
+  text,...), #172b4d, #333333, #000000) and neutral backgrounds (--ds-surface,
+  gray-subtlest, #ffffff, #f4f5f7, #f1f2f4) are not colour. Colour is applied
+  to inline runs only (never across a block, never inside code/pre); a heading
+  is painted inside its "#" line ([[page#Heading]] is matched against its text
+  with HTML stripped). Code without the run's colour in the source breaks the
+  run. A coloured link is wrapped whole; a link only partly coloured is split
+  into one link per colour stretch of its label (same target), each wrapped
+  whole. Only when the label cannot be split at its top level (a child of
+  mixed colour, a block inside) the link stays unpainted and each coloured
+  piece is logged [colour-lost] (.ingest.json colour_lost). Whitespace-only
+  text is never wrapped. A coloured table
+  cell: GFM -> span around the cell content, raw-HTML fallback -> style on the
+  td/th. Colour travels through pandoc and tablemd as plain-text tokens, like
+  anchors;
+- "[label](" typed in Confluence right before a link and ")" right after it
+  (markdown written by hand in the editor) become ONE link with that label.
+  Checked twice: on the source (a ")" after the <a>) and on the markdown (a
+  ")" right after the link as it stands after the link rules -- a link to a
+  page whose title ends in ")" leaves its own ")" there). Bracket text in any
+  other shape (no ")" after the link) is left as written;
+- inline data: URI images are decoded into assets/<pageid>_inline_<sha1[:10]>.
+  <ext> and embedded like any other picture -- a data: URI is never emitted;
+- a relative Confluence link (/pages/, /display/, /spaces/, /x/, /download/)
+  that resolves to nothing in the export becomes absolute with --base-url
+  (without it: plain text + [link-miss], in raw-HTML tables too; createpage
+  redlinks collapse to text silently, as before);
+- a re-ingest by another converter version is warned about like changed flags:
+  "changed" then includes pages the new converter renders differently.
 """
 import os, re, sys, html, json, base64, zlib, shutil, subprocess, argparse
 import hashlib, unicodedata
@@ -113,7 +152,7 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:                              # pragma: no cover - py<3.7 / pipes
         pass
 
-CONVERTER_VERSION = "2.4"
+CONVERTER_VERSION = "2.5"
 # how rec["hash"] is computed. Bumping it makes "changed" meaningless against
 # an older .pagemap.json -- that is reported, not silently diffed.
 HASH_ALGO = "body-v1"
@@ -405,6 +444,590 @@ def drop_to_text(el, text):
 def cclass(el):
     return (el.get("class") or "")
 
+# ---------------------------------------------------------------- 2a. unrendered links
+AC_NS = {"ac": "http://atlassian.com/content",
+         "ri": "http://atlassian.com/resource/identifier"}
+_XML_ENT_OK = re.compile(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9A-Fa-f]+);)(\w+;)")
+
+def link_miss(ctx, target, text):
+    """[link-miss] from the DOM pass: same record post_process writes."""
+    rel = (ctx.get("cur_rec") or {}).get("relpath", "")
+    ctx.setdefault("missing_links", []).append(
+        {"page": rel, "target": target, "text": text})
+    print(f"[link-miss] {rel}: {target} ({text or '—'})")
+
+def placeholder_link(img, ctx):
+    """Confluence renders a link it failed to transform as
+    <img class="transform-error" data-encoded-xml="<ac:link>...">. The XML is
+    the storage format of that link. -> (text, href or None) for an ac:link,
+    None for any other placeholder (those stay dropped). href is the export's
+    own NNN.html(#anchor) -- post_process turns it into a [[wikilink]] like
+    every other page link; a target outside the export -> text + [link-miss]."""
+    enc = img.get("data-encoded-xml")
+    if not enc:
+        return None
+    xml = urllib.parse.unquote_plus(enc)
+    if "<ac:link" not in xml:
+        return None
+    # storage format carries HTML entities (&nbsp;) the XML parser does not know
+    xml = _XML_ENT_OK.sub(lambda m: html.unescape("&" + m.group(1)), xml)
+    wrapped = ('<r xmlns:ac="%s" xmlns:ri="%s">%s</r>'
+               % (AC_NS["ac"], AC_NS["ri"], xml))
+    try:
+        root = etree.fromstring(wrapped.encode("utf-8"),
+                                etree.XMLParser(recover=True, resolve_entities=False))
+    except etree.XMLSyntaxError:
+        return None
+    link = root.find(".//ac:link", AC_NS) if root is not None else None
+    if link is None:
+        return None
+    body = link.find("ac:link-body", AC_NS)
+    text = "".join(body.itertext()) if body is not None else ""
+    if not text.strip():
+        pt = link.find("ac:plain-text-link-body", AC_NS)
+        text = (pt.text or "") if pt is not None else ""
+    page = link.find("ri:page", AC_NS)
+    att = link.find("ri:attachment", AC_NS)
+    ri = "{%s}" % AC_NS["ri"]
+    title = (page.get(ri + "content-title") or "") if page is not None else ""
+    skey = (page.get(ri + "space-key") or "") if page is not None else ""
+    anchor = link.get("{%s}anchor" % AC_NS["ac"]) or ""
+    if not text.strip():
+        text = (title or (att.get(ri + "filename") if att is not None else "")
+                or anchor)
+    if not text.strip():
+        return None
+    frag = "#" + anchor if anchor else ""
+    if page is not None and title:
+        pid = None
+        if not skey or skey.casefold() == SPACE.casefold():
+            pid = ctx["title2id"].get(normtitle(title))
+        if pid:
+            return text, os.path.basename(ctx["pages"][pid]["href"]) + frag
+        link_miss(ctx, (f"{skey}:" if skey else "") + title + frag, text.strip())
+        return text, None
+    if page is None and att is None and anchor:
+        return text, frag                          # anchor on this very page
+    link_miss(ctx, (att.get(ri + "filename") if att is not None else "")
+              or "ac:link", text.strip())
+    return text, None
+
+# ---------------------------------------------------------------- 2b. data: images
+DATA_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg",
+            "image/gif": ".gif", "image/svg+xml": ".svg", "image/webp": ".webp",
+            "image/bmp": ".bmp"}
+
+def save_data_uri(src, ctx):
+    """data:image/...;base64,... -> flat asset name (bytes kept in ctx["blobs"],
+    written next to the copied attachments). Name: <pageid>_inline_<sha1[:10]>
+    -- stable across runs, the same picture twice on a page is one file.
+    -> None for a non-image or undecodable URI (dropped like an icon)."""
+    m = re.match(r"data:([^;,]*)((?:;[^;,]*)*),(.*)\Z", src, re.S)
+    if not m:
+        return None
+    ext = DATA_EXT.get(m.group(1).strip().lower())
+    if not ext:
+        return None
+    try:
+        if ";base64" in m.group(2).lower():
+            data = base64.b64decode(re.sub(r"\s+", "", m.group(3)), validate=False)
+        else:
+            data = urllib.parse.unquote_to_bytes(m.group(3))
+    except (ValueError, TypeError):
+        return None
+    if not data:
+        return None
+    pid = (ctx.get("cur_rec") or {}).get("id", "page")
+    flat = f"{pid}_inline_{hashlib.sha1(data).hexdigest()[:10]}{ext}"
+    ctx.setdefault("blobs", {})[flat] = data
+    return flat
+
+# ---------------------------------------------------------------- 2c. colour
+# Colour is meaning in this corpus (a red "да" in a mandatory column, a green
+# new field). Only NON-default colour is kept: the editor paints nearly every
+# span with the theme's text colour, and wrapping those would bury the page.
+FG_DEFAULT = {"#172b4d", "#333333", "#000000"}
+BG_NEUTRAL = {"#ffffff", "#f4f5f7", "#f1f2f4"}
+CSS_NAMED = {
+    "black": "#000000", "white": "#ffffff", "red": "#ff0000", "green": "#008000",
+    "blue": "#0000ff", "yellow": "#ffff00", "orange": "#ffa500",
+    "purple": "#800080", "gray": "#808080", "grey": "#808080",
+    "silver": "#c0c0c0", "maroon": "#800000", "olive": "#808000",
+    "lime": "#00ff00", "aqua": "#00ffff", "teal": "#008080", "navy": "#000080",
+    "fuchsia": "#ff00ff"}
+_NOT_A_COLOUR = {"inherit", "initial", "unset", "revert", "currentcolor", "auto"}
+_STYLE_FG = re.compile(r"(?:^|;)\s*color\s*:\s*([^;]+)", re.I)
+_STYLE_BG = re.compile(r"(?:^|;)\s*background(?:-color)?\s*:\s*([^;]+)", re.I)
+_BLOCKISH = HEADINGS | {
+    "p", "div", "li", "ul", "ol", "dl", "dt", "dd", "table", "thead", "tbody",
+    "tfoot", "tr", "td", "th", "caption", "blockquote", "pre", "hr", "section",
+    "article", "header", "footer", "figure", "figcaption", "center", "form",
+    "fieldset", "details", "summary", "nav", "aside", "main"}
+_CODEISH = {"code", "pre", "tt", "kbd", "samp"}
+_NOCOLOUR = ("", "")                # (fg, bg): nothing to paint
+_MIXED = object()
+CLR_OPEN = "ZZCLRO"                 # ZZCLROF<fg|N>B<bg|N>ZZ ... ZZCLRCZZ
+CLR_CLOSE = "ZZCLRCZZ"
+
+def _unvar(v):
+    """var(--a, var(--b, #hex)) -> #hex: the fallback of every var(), innermost
+    last. A var() without fallback is not a colour we can print."""
+    while v.startswith("var("):
+        depth, comma, end = 0, -1, -1
+        for i, ch in enumerate(v):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+            elif ch == "," and depth == 1 and comma < 0:
+                comma = i
+        if comma < 0 or end < 0:
+            return ""
+        v = v[comma + 1:end].strip()
+    return v
+
+def css_hex(v):
+    """CSS colour value -> '#rrggbb' (lowercase), '' when it is none/unknown."""
+    v = re.sub(r"!important", "", v or "", flags=re.I).strip().lower()
+    v = _unvar(v)
+    m = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})", v)
+    if m:
+        h = m.group(1)
+        return "#" + ("".join(c * 2 for c in h) if len(h) == 3 else h[:6])
+    m = re.fullmatch(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*"
+                     r"(?:,\s*(\d*\.?\d+)\s*)?\)", v)
+    if m:
+        if m.group(4) is not None and float(m.group(4)) == 0:
+            return ""                                 # fully transparent
+        return "#" + "".join(f"{min(int(x), 255):02x}" for x in m.group(1, 2, 3))
+    return CSS_NAMED.get(v, "")
+
+def fg_value(raw):
+    """Text colour -> None (not declared: inherit), '' (default), '#hex'."""
+    r = re.sub(r"\s+", "", (raw or "").lower())
+    if not r or r in _NOT_A_COLOUR:
+        return None
+    if r.startswith("var(--ds-text,"):                # the theme's text colour
+        return ""
+    h = css_hex(raw)
+    return "" if (not h or h in FG_DEFAULT) else h
+
+def bg_value(raw):
+    """Background -> None (not declared), '' (neutral), '#hex'."""
+    r = re.sub(r"\s+", "", (raw or "").lower())
+    if not r or r in _NOT_A_COLOUR:
+        return None
+    if "--ds-surface" in r or re.search(r"gr[ae]y-subtlest", r):
+        return ""
+    h = css_hex(raw)
+    return "" if (not h or h in BG_NEUTRAL or h == "transparent") else h
+
+def fg_decl(el):
+    m = _STYLE_FG.search(el.get("style") or "")
+    if m:
+        return fg_value(m.group(1))
+    if el.tag == "font" and el.get("color"):
+        return fg_value(el.get("color"))
+    return None
+
+def bg_decl(el):
+    if el.tag in ("td", "th"):                        # a cell paints itself: 6d
+        return ""
+    m = _STYLE_BG.search(el.get("style") or "")
+    return bg_value(m.group(1)) if m else None
+
+def cell_bg_of(cell):
+    """Cell highlight: data-highlight-colour, else the highlight-X class, else
+    a background style. -> '#hex' or '' (neutral / none)."""
+    v = cell.get("data-highlight-colour")
+    if not v:
+        m = re.search(r"(?:^|\s)highlight-(\S+)", cell.get("class") or "")
+        v = m.group(1) if m else None
+    if not v:
+        m = _STYLE_BG.search(cell.get("style") or "")
+        v = m.group(1) if m else None
+    return bg_value(v) or ""
+
+def _eff(el, eff):
+    fg, bg = fg_decl(el), bg_decl(el)
+    return (eff[0] if fg is None else fg, eff[1] if bg is None else bg)
+
+def _has_text(t):
+    return bool(t) and bool(re.sub(r"[\s​﻿]+", "", t))
+
+def _has_block(el):
+    return any(isinstance(d.tag, str) and d.tag in _BLOCKISH
+               for d in el.iterdescendants())
+
+def _uniform(el, eff, code_neutral=False):
+    """The (fg, bg) shared by ALL text of el's subtree; None when it has no
+    text, _MIXED otherwise. Code has the colour its text has in the source
+    (it is never painted itself, but plain code must not ride inside a
+    coloured run and take the colour on); code_neutral=True counts it as no
+    text at all -- how a link is judged, see _colour_container."""
+    if code_neutral and el.tag in _CODEISH:
+        return None
+    e, seen = _eff(el, eff), set()
+    if _has_text(el.text):
+        seen.add(e)
+    for c in el:
+        if isinstance(c.tag, str):
+            u = _uniform(c, e, code_neutral)
+            if u is _MIXED:
+                return _MIXED
+            if u is not None:
+                seen.add(u)
+        if _has_text(c.tail):
+            seen.add(e)
+        if len(seen) > 1:
+            return _MIXED
+    return next(iter(seen)) if seen else None
+
+def _edge_ok(el):
+    """An element whose edges may be trimmed: not code (verbatim), not a link
+    (its text is the link label), not a picture."""
+    return isinstance(el.tag, str) and el.tag not in _CODEISH | {"a", "img", "br"}
+
+def _strip_leading(el):
+    """Detach whitespace and <br> that open el's content (at any depth) ->
+    [str | <br>] in document order. A colour span must start at text: a
+    leading line break inside it splits the span over two lines."""
+    out = []
+    while True:
+        t = el.text or ""
+        if t.strip():
+            s = t.lstrip()
+            if len(s) < len(t):
+                out.append(t[:len(t) - len(s)])
+                el.text = s
+            return out
+        if t:
+            out.append(t)
+            el.text = None
+        if not len(el):
+            return out
+        first = el[0]
+        if isinstance(first.tag, str) and first.tag == "br":
+            tail, first.tail = first.tail, None
+            el.remove(first)
+            el.text = tail
+            out.append(first)
+            continue
+        if _edge_ok(first):
+            out += _strip_leading(first)
+        return out
+
+def _strip_trailing(el):
+    """Mirror of _strip_leading for the end of el. A trailing line break left
+    inside put "</span>" alone on the next line -- an HTML block start for
+    CommonMark, which swallows the lines after it."""
+    out = []
+    while True:
+        if not len(el):
+            t = el.text or ""
+            s = t.rstrip()
+            if len(s) < len(t):
+                out.insert(0, t[len(s):])
+                el.text = s
+            return out
+        last = el[-1]
+        t = last.tail or ""
+        if t.strip():
+            s = t.rstrip()
+            if len(s) < len(t):
+                out.insert(0, t[len(s):])
+                last.tail = s
+            return out
+        if t:
+            out.insert(0, t)
+            last.tail = None
+        if isinstance(last.tag, str) and last.tag == "br":
+            el.remove(last)
+            out.insert(0, last)
+            continue
+        if _edge_ok(last):
+            out = _strip_trailing(last) + out
+        return out
+
+def _style_token(pair):
+    fg, bg = pair
+    return f"{CLR_OPEN}F{fg[1:] if fg else 'N'}B{bg[1:] if bg else 'N'}ZZ"
+
+def _coloured_texts(el, eff):
+    """[(colour, text)] of the non-default coloured text in el's subtree,
+    consecutive text of one colour merged -- what a [colour-lost] entry names."""
+    out = []
+    def add(col, t):
+        if not _has_text(t) or col == _NOCOLOUR:
+            if out and t:
+                out.append(None)                    # breaks a merge
+            return
+        if out and out[-1] is not None and out[-1][0] == col:
+            out[-1] = (col, out[-1][1] + t)
+        else:
+            out.append((col, t))
+    def walk(n, e):
+        e = _eff(n, e)
+        add(e, n.text or "")
+        for c in n:
+            if isinstance(c.tag, str) and c.tag in _CODEISH:
+                if out:
+                    out.append(None)   # code is never painted: not "lost"
+            elif isinstance(c.tag, str):
+                walk(c, e)
+            add(e, c.tail or "")
+    walk(el, eff)
+    return [(c, re.sub(r"\s+", " ", t).strip()) for c, t in
+            (x for x in out if x is not None)]
+
+def _split_link(a, e):
+    """A link whose label is only partly coloured -> one link per colour
+    stretch of its label, all to the same target, in place of a. Each piece
+    is then of one colour and is painted whole like any link. Split only at
+    the link's own top level: its text, each child, each tail. Whitespace-
+    only text, <br>, <img> and code are neutral and ride with the stretch
+    they sit in. Whitespace at a split point goes between the pieces, not
+    into a label. False (a untouched) when a child is itself of mixed colour
+    or holds a block -- such a link stays unpainted and is logged."""
+    ea = _eff(a, e)
+    toks = []                               # [(colour | None, str | element)]
+    if a.text:
+        toks.append((ea if _has_text(a.text) else None, a.text))
+    for c in a:
+        if not isinstance(c.tag, str) or c.tag in ("br", "img") \
+                or c.tag in _CODEISH:
+            col = None
+        elif c.tag in _BLOCKISH or _has_block(c):
+            return False
+        else:
+            col = _uniform(c, ea, code_neutral=True)
+            if col is _MIXED:
+                return False
+        toks.append((col, c))
+        if c.tail:
+            toks.append((ea if _has_text(c.tail) else None, c.tail))
+    segs = []                               # [[colour, [str | element]]]
+    for col, x in toks:
+        if segs and (col is None or segs[-1][0] in (None, col)):
+            if segs[-1][0] is None:
+                segs[-1][0] = col
+            segs[-1][1].append(x)
+        else:
+            segs.append([col, [x]])
+    if len(segs) < 2:
+        return False
+    parent, tail = a.getparent(), a.tail
+    pieces = []
+    for k, (_, xs) in enumerate(segs):
+        n = etree.Element("a")
+        for key, val in a.attrib.items():
+            if k == 0 or key not in ("id", "name"):
+                n.set(key, val)
+        for x in xs:
+            if isinstance(x, str):
+                if len(n):
+                    n[-1].tail = (n[-1].tail or "") + x
+                else:
+                    n.text = (n.text or "") + x
+            else:
+                x.tail = None
+                n.append(x)
+        pieces.append(n)
+    out = []                                # the new siblings, in order
+    for k, n in enumerate(pieces):
+        lead = _strip_leading(n) if k > 0 else []
+        trail = _strip_trailing(n) if k < len(pieces) - 1 else []
+        out += lead + [n] + trail
+    prev = None
+    for x in out:
+        if isinstance(x, str):
+            if prev is None:
+                if a.getprevious() is not None:
+                    p_ = a.getprevious()
+                    p_.tail = (p_.tail or "") + x
+                else:
+                    parent.text = (parent.text or "") + x
+            else:
+                prev.tail = (prev.tail or "") + x
+        else:
+            x.tail = None
+            a.addprevious(x)
+            prev = x
+    prev.tail = (prev.tail or "") + (tail or "")
+    parent.remove(a)
+    return True
+
+def _colour_container(el, e, lost=None):
+    """Paint the inline runs of el. e: (fg, bg) in force for el's own text.
+    Items are el.text, each child, each tail. A run is a stretch of items of
+    one colour; neutral items (whitespace, <br>, <img>) ride inside a run but
+    never start or end it. Code rides inside a run only when its text has the
+    run's colour in the source, otherwise it ends the run; it never starts or
+    ends one (code is never painted itself). Blocks (headings too: painted
+    inside), <pre> and inline elements of mixed colour break runs -- the
+    latter are painted inside, recursively. A link is painted whole: a link
+    whose label is partly coloured is first split into one link per colour
+    stretch (_split_link); one that cannot be split loses its colour, and
+    lost (a list) gets (colour, text) for each coloured piece of it."""
+    for c in list(el):
+        if isinstance(c.tag, str) and c.tag == "a" \
+                and _uniform(c, e, code_neutral=True) is _MIXED:
+            _split_link(c, e)
+    kids = list(el)
+    items = []                      # (kind, colour) per position; kind c|n|b|k
+    def text_item(t):
+        return ("c", e) if _has_text(t) else ("n", None)
+    items.append(text_item(el.text))
+    for c in kids:
+        if not isinstance(c.tag, str) or c.tag in ("br", "img"):
+            items.append(("n", None))
+        elif c.tag in (_CODEISH - {"pre"}):
+            u = _uniform(c, e)
+            items.append(("n", None) if u is None else
+                         ("b", None) if u is _MIXED else ("k", u))
+        elif c.tag == "pre":
+            items.append(("b", None))              # never painted inside
+        elif c.tag in _BLOCKISH or _has_block(c):
+            items.append(("b", None))
+            _colour_container(c, _eff(c, e), lost)
+        else:
+            u = _uniform(c, e)
+            un = _uniform(c, e, code_neutral=True)
+            if un is None:                         # nothing but code inside:
+                items.append(("n", None) if u is None else     # it is code
+                             ("b", None) if u is _MIXED else ("k", u))
+            elif u is _MIXED and c.tag == "a":
+                # a link is painted whole. Plain code inside a coloured
+                # link does not split it (the link label is one piece); a
+                # mix _split_link could not take apart leaves the link
+                # unpainted -- logged
+                if un is _MIXED:
+                    un = _NOCOLOUR
+                    if lost is not None:
+                        lost.extend(_coloured_texts(c, e))
+                items.append(("c", un))
+            elif u is _MIXED:
+                items.append(("b", None))
+                _colour_container(c, _eff(c, e), lost)
+            elif u is None:
+                items.append(("n", None))
+            else:
+                items.append(("c", u))
+        items.append(text_item(c.tail))
+    runs, cur = [], None            # cur: [colour, first, last] (item indices)
+    for i, (kind, col) in enumerate(items):
+        if kind == "c" and cur is not None and col == cur[0]:
+            cur[2] = i
+            continue
+        if kind == "n" or (kind == "k" and cur is not None and col == cur[0]):
+            continue
+        if cur is not None:
+            runs.append(cur)
+            cur = None
+        if kind == "c" and col != _NOCOLOUR:
+            cur = [col, i, i]
+    if cur is not None:
+        runs.append(cur)
+    if not runs:
+        return
+    # explode: every text item becomes a <zzt> element, so a run is a plain
+    # slice of children (strip_tags("zzt") glues the text back afterwards)
+    nodes = []
+    t0, el.text = el.text, None
+    if t0:
+        z = E("zzt", t0); el.insert(0, z); nodes.append(z)
+    else:
+        nodes.append(None)
+    for c in kids:
+        nodes.append(c)
+        t, c.tail = c.tail, None
+        if t:
+            z = E("zzt", t); c.addnext(z); nodes.append(z)
+        else:
+            nodes.append(None)
+    for col, i, j in runs:
+        seg = [n for n in nodes[i:j + 1] if n is not None]
+        first, last = seg[0], seg[-1]
+        if first.tag == "zzt":                     # edge whitespace stays outside
+            t = first.text
+            lead = t[:len(t) - len(t.lstrip())]
+            # a task-list marker belongs to the list item, not to the colour
+            if i == 0 and el.tag == "li":
+                mk = re.match(r"\[[ xX]\] \s*", t[len(lead):])
+                if mk:
+                    lead += mk.group(0)
+            if lead:
+                first.text = t[len(lead):]
+                first.addprevious(E("zzt", lead))
+        if last.tag == "zzt":
+            t = last.text
+            trail = t[len(t.rstrip()):]
+            if trail:
+                last.text = t[:len(t) - len(trail)]
+                last.addnext(E("zzt", trail))
+        # ...and whitespace / <br> at the edges INSIDE a painted element too
+        lead = _strip_leading(first) if first.tag != "zzt" and _edge_ok(first) else []
+        trail = _strip_trailing(last) if last.tag != "zzt" and _edge_ok(last) else []
+        w = etree.Element("span")
+        w.set("data-zzclr", _style_token(col))
+        first.addprevious(w)
+        for n in seg:
+            w.append(n)
+        for x in lead:
+            w.addprevious(E("zzt", x) if isinstance(x, str) else x)
+        anchor = w
+        for x in trail:
+            node = E("zzt", x) if isinstance(x, str) else x
+            anchor.addnext(node)
+            anchor = node
+
+def colour_runs(content, ctx=None):
+    """Paint non-default colour as plain-text tokens around inline runs; they
+    ride through pandoc and tablemd untouched and restore_colours() turns them
+    into <span style="...">. Tokens, not <span style>, because pandoc rewrites
+    an attributed span in its own way, and tablemd drops spans altogether.
+    Colour that cannot be kept (part of a link's label) -> [colour-lost]."""
+    lost = []
+    _colour_container(content, _NOCOLOUR, lost)
+    rel = ((ctx or {}).get("cur_rec") or {}).get("relpath", "")
+    for (fg, bg), text in lost:
+        if not text:
+            continue
+        colour = ";".join(x for x in (f"color:{fg}" if fg else "",
+                                      f"background-color:{bg}" if bg else "") if x)
+        if ctx is not None:
+            ctx.setdefault("colour_lost", []).append(
+                {"page": rel, "text": text, "colour": colour})
+        print(f"[colour-lost] {rel}: «{text}» ({colour})")
+    etree.strip_tags(content, "zzt")
+    for w in content.xpath(".//span[@data-zzclr]"):
+        tok = w.get("data-zzclr")
+        del w.attrib["data-zzclr"]
+        w.text = tok + (w.text or "")
+        if len(w):
+            w[-1].tail = (w[-1].tail or "") + CLR_CLOSE
+        else:
+            w.text += CLR_CLOSE
+
+_CLR_TOKEN = re.compile(r"ZZCLROF([0-9a-f]{6}|N)B([0-9a-f]{6}|N)ZZ")
+
+def restore_colours(md):
+    """Colour tokens -> inline HTML. A run that lost all its text on the way
+    (pandoc dropped a lone nbsp) is unwrapped: never a span around nothing."""
+    def style(m):
+        parts = []
+        if m.group(1) != "N":
+            parts.append(f"color:#{m.group(1)}")
+        if m.group(2) != "N":
+            parts.append(f"background-color:#{m.group(2)}")
+        return ";".join(parts)
+    md = re.sub(_CLR_TOKEN.pattern + r"(\s*)" + re.escape(CLR_CLOSE), r"\3", md)
+    md = _CLR_TOKEN.sub(lambda m: f'<span style="{style(m)}">', md)
+    return md.replace(CLR_CLOSE, "</span>")
+
 def clean_dom(content, ctx):
     """ctx: dict to collect asset/attachment copy tasks. content: <div id=main-content>"""
     # 0. remove style + script + toc macro
@@ -577,6 +1200,16 @@ def clean_dom(content, ctx):
                 or "placeholder-" in os.path.basename(src)
                 or "viewavatar" in src or "useravatar" in src
                 or "/images/emoticons/" in src):
+            # a LINK the export could not render: its words are content
+            ph = placeholder_link(img, ctx)
+            if ph is not None:
+                text, href = ph
+                if href:
+                    a = E("a", text); a.set("href", href)
+                    replace_with(img, a)
+                else:
+                    drop_to_text(img, text)
+                continue
             if "unknown-macro" in src:      # macro the export could not render:
                 p = E("p")                  # dropping it silently loses content
                 s = etree.SubElement(p, "strong")
@@ -584,7 +1217,14 @@ def clean_dom(content, ctx):
                 replace_with(img, p); continue
             img.getparent().remove(img); continue
         new_src = None
-        if src.startswith("attachments/"):
+        if src.startswith("data:"):
+            # the picture IS the URI: a data: link is dead for link-check and
+            # bloats the page -- it becomes an asset file like any attachment
+            flat = save_data_uri(src, ctx)
+            if not flat:                   # dropped like an icon; its tail
+                drop_to_text(img, ""); continue        # (the words after) stays
+            new_src = "ASSET::" + flat
+        elif src.startswith("attachments/"):
             new_src = register_image(src, ctx)
         elif src.startswith("download/"):
             new_src = register_download(src, ctx)
@@ -626,6 +1266,38 @@ def clean_dom(content, ctx):
     # 6b. empty attachment anchors (file-card macro): put the filename inside,
     #     BEFORE pandoc -- applies both inside tables and in flow text.
     tablemd.fill_empty_anchors(content)
+    # 6b'. markdown typed by hand in the editor: "[label](" + <a> + ")". The
+    #      author meant ONE link called label; left alone it became
+    #      "\[label\]([[page]])" -- a link whose target is a wikilink.
+    #      Only this exact shape: "[label](" right before the link AND ")"
+    #      right after it. Bracket text in any other shape (no ")" after the
+    #      link, say) is left as written. The same shape on the markdown
+    #      side (a ")" the md link rule leaves after a link) -> post_process.
+    for a in content.xpath(".//a[@href]"):
+        if not (a.tail or "").startswith(")"):
+            continue
+        prev, parent = a.getprevious(), a.getparent()
+        before = (prev.tail if prev is not None else parent.text) or ""
+        m = re.search(r"\[([^\[\]\n]+)\]\($", before)
+        if not m or not m.group(1).strip():
+            continue
+        if prev is not None:
+            prev.tail = before[:m.start()]
+        else:
+            parent.text = before[:m.start()]
+        a.tail = a.tail[1:]
+        # parens of the URL are percent-encoded (the same URL): unencoded,
+        # the md link rules cut it at the first ")" and the rest of it stayed
+        # on the page as a stray ")"
+        a.set("href", a.get("href").replace("(", "%28").replace(")", "%29"))
+        for c in list(a):
+            a.remove(c)
+        a.text = m.group(1)
+    # 6b''. colour: non-default text colour / highlight -> colour runs, and a
+    #       coloured table cell keeps its background (set after the scrub).
+    #       Styles are read here, before 6c throws them away.
+    colour_runs(content, ctx)
+    cell_bgs = [(c, cell_bg_of(c)) for c in content.xpath(".//td | .//th")]
     # 6c. attribute scrub (whitelist per tag). Confluence hangs class/style/
     #     rel/data-* on everything; pandoc keeps ANY attributed inline element
     #     as raw HTML, so flow links stayed <a class=...> instead of becoming
@@ -639,6 +1311,12 @@ def clean_dom(content, ctx):
         for k in list(el.attrib):
             if k not in keep:
                 del el.attrib[k]
+    # 6d. the one style that survives: a coloured cell's background. tablemd
+    #     turns it into a span around the cell content, a raw-HTML fallback
+    #     table keeps it on the td/th as is
+    for c, bg in cell_bgs:
+        if bg:
+            c.set("style", f"background-color:{bg}")
     # 7. drop all remaining Confluence wrapper tags (table-wrap, code panel,
     #    wiki-content, citation/font spans...) keeping their text & children.
     etree.strip_tags(content, "div", "span", "font")
@@ -745,6 +1423,7 @@ def strip_md_inline(s):
     s = re.sub(r"\[\[([^\]\n]*)\]\]", r"\1", s)
     s = re.sub(r"\[((?:[^\[\]\\]|\\.)*?)\]\([^)\s]*(?:\s+\"[^\"]*\")?\)", r"\1", s)
     s = re.sub(r"<[^>]+>", "", s)                                 # raw inline html
+    s = _CLR_TOKEN.sub("", s).replace(CLR_CLOSE, "")              # colour (2c)
     for pat in (r"\*\*(.+?)\*\*", r"__(.+?)__", r"~~(.+?)~~",
                 r"\*(.+?)\*", r"`+([^`]+)`+"):
         s = re.sub(pat, r"\1", s)
@@ -902,7 +1581,7 @@ def convert_body(content, page="", fallbacks=None, anchors_out=None):
     for i, (aname, _kind) in enumerate(anchors):
         md = md.replace(f"ZZANCHOR{i}ZZ",
                         f'<a name="{html.escape(aname, quote=True)}"></a>')
-    return md
+    return restore_colours(md)
 
 def _inline_table(md, ph, tmd):
     """Placeholder that pandoc kept inline (a table as the only/first child of
@@ -966,6 +1645,10 @@ def page_frag(pid, frag, ctx):
     if amap is None:
         return frag
     return amap.get(anchor_key(frag), "")
+
+# relative Confluence paths: /pages/viewpage.action?..., /display/KEY/Title,
+# /spaces/KEY/pages/N/..., /x/<tiny>, /download/attachments/N/file
+REL_CONF = re.compile(r"/(?:pages|display|spaces|x|download)/")
 
 def normtitle(t):
     return re.sub(r"\s+", " ", html.unescape(t)).strip().lower()
@@ -1149,6 +1832,16 @@ def post_process(md, rec, pages, href2id, ctx):
         if kind[0] == "file":
             flat = register(kind[1], ctx)
             return f"![[{flat}]]" if flat.lower().endswith(IMG_EXT) else f"[[{flat}|{text or flat}]]"
+        # a RELATIVE Confluence link to something outside the export is a
+        # path on the Confluence server: with --base-url it gets its host back,
+        # without it there is nothing to point at -> text + [link-miss]
+        if REL_CONF.match(url) and "createpage.action" not in url:
+            if not BASE_URL:
+                miss(url, text)
+                return text or url
+            full = BASE_URL + url
+            label = full if text == url else m.group(1)
+            return f"[{label}]({full})"
         return m.group(0)
     md = re.sub(r"(?<!!)\[" + LINKTEXT + r"\]\(((?:https?:|/)[^)\s]+)\)", md_conf, md)
     # autolinks <url>: pandoc emits them for <a href="X">X</a> (text == href);
@@ -1175,7 +1868,24 @@ def post_process(md, rec, pages, href2id, ctx):
             out.append(fn(line[pos:m.start()])); out.append(m.group(0)); pos = m.end()
         out.append(fn(line[pos:]))
         return "".join(out)
-    fix_inline = lambda s: re.sub(r"<(https?://[^>\s]+)>", auto_conf, s).replace("-\\>", "->")
+    # markdown typed by hand in the editor, as it stands after the rules above:
+    # "\[label\](" + link + ")" -> ONE link called label (see 6b' in
+    # clean_dom). 6b' sees only a ")" that follows the <a> in the source; a
+    # link to a page whose title ends in ")" -- "...+(списание)" -- is cut by
+    # the md link rule at the title's "(", and the link's own ")" is left
+    # right after it: the same shape, caught here. Only this exact shape.
+    def typed_sub(m):
+        label = m.group(1)
+        if not label.strip():
+            return m.group(0)
+        if m.group(2):
+            return f"[[{m.group(2)}|{unesc(label.strip())}]]"
+        return f"[{label.strip()}]({m.group(3) or m.group(4)})"
+    typed_rx = (r"\\\[([^\[\]\n]+)\\\]\((?:\[\[([^\]|\\\n]+)(?:\\?\|[^\]\n]*)?\]\]"
+                r"|\[[^\[\]\n]*\]\((https?://[^)\s]+)\)|<(https?://[^>\s]+)>)\)")
+    fix_inline = lambda s: re.sub(typed_rx, typed_sub,
+                                  re.sub(r"<(https?://[^>\s]+)>", auto_conf, s)
+                                  ).replace("-\\>", "->")
     lines, in_fence = md.split("\n"), False
     for i, l in enumerate(lines):
         if re.match(r"^[ \t]*(```|~~~)", l):
@@ -1222,10 +1932,18 @@ def post_process(md, rec, pages, href2id, ctx):
             flat = register(kind[1], ctx)
             folder = "assets" if flat.lower().endswith(IMG_EXT) else "attachments"
             return f'{pre}href="{relq(folder + "/" + flat)}"'
+        if (REL_CONF.match(html.unescape(url))              # см. md_conf
+                and "createpage.action" not in url):
+            if BASE_URL:
+                return f'{pre}href="{BASE_URL}{url}"'
+            miss(html.unescape(url), "")
+            return f'{pre}href="ZZRELMISS"'     # -> plain text, below
         return m.group(0)
     md = re.sub(r'(<a\s[^>]*?)href="((?:https?:|/)[^"]+)"', html_conf, md)
     # "create page" redlinks point to nothing -> collapse to plain text
     md = re.sub(r'<a\b[^>]*href="[^"]*createpage\.action[^"]*"[^>]*>(.*?)</a>', r"\1", md, flags=re.S)
+    # ...and so does a relative link out of the export without --base-url
+    md = re.sub(r'<a\b[^>]*href="ZZRELMISS"[^>]*>(.*?)</a>', r"\1", md, flags=re.S)
     md = re.sub(r"\[" + LINKTEXT + r"\]\([^)]*createpage\.action[^)]*\)", lambda m: unesc(m.group(1)), md)
     # strip pandoc newline-entity artifact inside raw HTML tables
     md = md.replace("&#10;", "")
@@ -1428,6 +2146,16 @@ def main():
                            f"{prev_meta.get('converter_version') or 'неизвестна'} → "
                            f"{CONVERTER_VERSION}) — сравнивать содержимое не с чем")
         print("[warn] " + flags_warn, file=sys.stderr)
+    version_warn = ""
+    if (prev and not flags_warn
+            and prev_meta.get("converter_version") != CONVERTER_VERSION):
+        # same flags, same hash format, another converter: pages it renders
+        # differently (2.5: colour, recovered links) show up as "changed"
+        version_warn = ("версия конвертера сменилась "
+                      f"({prev_meta.get('converter_version') or 'неизвестна'} → "
+                      f"{CONVERTER_VERSION}): «изменено» включает страницы, которые "
+                      "новая версия выводит иначе, хотя в Confluence они не менялись")
+        print("[warn] " + version_warn, file=sys.stderr)
     # build attachment index (attId -> path) for thumbnail resolution
     att_index = {}
     for dirpath, _, files in os.walk(os.path.join(SRC, "attachments")):
@@ -1465,6 +2193,7 @@ def main():
         cont = doc.xpath("//div[@id='main-content']")
         if not cont:
             print(f"[nobody] {rec['href']}"); continue
+        ctx["cur_rec"] = rec             # link-miss / inline-asset names in clean_dom
         content = clean_dom(cont[0], ctx)
         anchors = {}                 # anchor name -> fragment that navigates
         body_md = convert_body(content, page=rec["relpath"], fallbacks=fallbacks,
@@ -1489,6 +2218,9 @@ def main():
         print(f"[link-miss] {len(ctx['missing_links'])} ссылок в никуда "
               "(страница вне выгрузки, якорь без цели) стали текстом "
               "(список — в .ingest.json)")
+    if ctx.get("colour_lost"):
+        print(f"[colour-lost] {len(ctx['colour_lost'])} цветных фрагментов в "
+              "подписях ссылок остались без цвета (список — в .ingest.json)")
     # partial runs (ONLY/LIMIT): unconverted pages keep the previous hash
     for pid, r in pages.items():
         if "hash" not in r:
@@ -1505,6 +2237,10 @@ def main():
             else: n_at += 1
         else:
             miss += 1
+    for flat, data in sorted(ctx.get("blobs", {}).items()):   # decoded data: images
+        with open(os.path.join(ASSETS, flat), "wb") as fh:
+            fh.write(data)
+        n_a += 1
     print(f"[files] {n_a} images/diagrams -> assets/, {n_at} -> attachments/ ({miss} missing src)")
     # remove pages that disappeared from the export (re-ingest into same dir).
     # HARD RULE: files without a confluence_id frontmatter (hand-written layers
@@ -1579,6 +2315,8 @@ def main():
     warns = []
     if flags_warn:
         warns.append(flags_warn)
+    if version_warn:
+        warns.append(version_warn)
     if stale_blocked:
         warns.append(f"массовое удаление заблокировано: {len(stale_blocked)} страниц "
                      "из «Удалено» остались на диске; проверь полноту выгрузки, "
@@ -1656,6 +2394,7 @@ def main():
         "space": SPACE, "base_url": BASE_URL,
         "converter_version": CONVERTER_VERSION, "flags": RUN_FLAGS,
         "flags_changed": bool(flags_warn),
+        "converter_changed": bool(version_warn),
         "pages_written": n_ok,
         "added":   [{"id": p, "title": pages[p]["title"],
                      "relpath": pages[p]["relpath"]} for p in added],
@@ -1668,6 +2407,7 @@ def main():
         "table_fallbacks": fallbacks,
         "missing_assets": miss,
         "missing_links": ctx["missing_links"],
+        "colour_lost": ctx.get("colour_lost", []),
         "stale_removed": stale_removed,
         "stale_blocked": stale_blocked,
     }

@@ -308,6 +308,49 @@ assert docs == sorted(docs), docs
 PY
 [ "$?" -eq 0 ] && ok || bad "«Возможно устарели в spec/» отсортированы"
 
+# ── convert 2.5: цвет, ссылки-заглушки, data:-картинки, ручной markdown ─────
+# Заглушка transform-error несёт ac:link в data-encoded-xml — раньше пропадала
+# вместе со словами. Цвет едет токенами через pandoc и восстанавливается
+# span'ом только там, где он не цвет темы. data: становится файлом в assets/.
+section "convert — цвет, заглушки, data:, относительные ссылки"
+CL="$TMP/colour"
+out="$(python3 "$CV" "$REPO/test/fixtures/colour" "$CL/wiki" 2>&1)"
+c="$(cat "$CL/wiki/Цвет-и-заглушки-301.md")"
+has "в [[Цель-302|CBS создан клиент]] и у него есть счет." "$c" \
+  "convert: заглушка отдала текст — wikilink на страницу выгрузки, текст для чужой"
+has "Чужая страница (у него есть счет)" "$out" "convert: заглушка на чужую страницу залогирована [link-miss]"
+hasnt "transform-error" "$c" "convert: плейсхолдер не утёк в md"
+has '<span style="color:#1f845a">Источник</span>' "$c" "convert: небазовый цвет стал span с hex из var()"
+has "и обычный текст." "$c" "convert: цвет темы по умолчанию не оборачивается"
+has '<span style="background-color:#ffebe6">фоном</span>' "$c" "convert: rgb() фона переведён в hex"
+has 'в цвете `x` остаётся' "$c" "convert: код внутри цвета не красится"
+has '| amount | <span style="background-color:#ffebe6">да</span> |' "$c" "convert: подсветка ячейки стала span в GFM"
+has '| Поле | Обязательно |' "$c" "convert: нейтральная подсветка gray-subtlest не оборачивается"
+has "![[301_inline_" "$c" "convert: data:-картинка стала embed"
+hasnt "data:image" "$c" "convert: data:-URI в md не осталось"
+ls "$CL/wiki/assets/"301_inline_*.png >/dev/null 2>&1 && ok || bad "convert: data:-картинка записана в assets/"
+has "[[Цель-302|подпись]] и дальше текст" "$c" "convert: ручной [подпись](ссылка) склеен в одну ссылку"
+has '[[Цель-302|обычная]] <span style="color:#1f845a">[[Цель-302|зелёная]]</span>' "$c" \
+  "convert: ссылка с частично цветной подписью поделена на ссылки по цвету"
+has '<span style="color:#c9372c">[[Цель-302|красная]]</span>' "$c" "convert: целиком цветная ссылка обёрнута целиком"
+has "Вложение вне выгрузки: f.pdf." "$c" "convert: относительная ссылка вне выгрузки без --base-url стала текстом"
+has "f.pdf?version=1 (f.pdf)" "$out" "convert: она же залогирована [link-miss]"
+python3 -c "import json;d=json.load(open('$CL/wiki/.ingest.json'));assert 'colour_lost' in d and d['converter_changed'] is False" \
+  && ok || bad ".ingest.json несёт colour_lost и converter_changed"
+CB="$TMP/colour-base"
+python3 "$CV" "$REPO/test/fixtures/colour" "$CB/wiki" --base-url https://conf.example.com >/dev/null 2>&1
+has "[f.pdf](https://conf.example.com/download/attachments/1/f.pdf?version=1)" \
+  "$(cat "$CB/wiki/Цвет-и-заглушки-301.md")" "convert: с --base-url относительная ссылка стала абсолютной"
+python3 - "$CB/wiki/.space.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p, encoding="utf-8")); d["converter_version"] = "2.4"
+json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+PY
+err="$(python3 "$CV" "$REPO/test/fixtures/colour" "$CB/wiki" --base-url https://conf.example.com 2>&1 >/dev/null)"
+has "версия конвертера сменилась (2.4 → 2.5)" "$err" "convert: смена версии конвертера предупреждается в stderr"
+python3 -c "import json;d=json.load(open('$CB/wiki/.ingest.json'));assert d['converter_changed'] is True" \
+  && ok || bad ".ingest.json: converter_changed = true после смены версии"
+
 else
 section "convert — ПРОПУЩЕНО (нет pandoc/lxml)"
 fi
