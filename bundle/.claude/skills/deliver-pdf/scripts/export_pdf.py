@@ -223,6 +223,11 @@ def report_unresolved(unresolved, strict):
     return 0
 
 
+# Входной диалект pandoc. Без расширения citations: «@Artur» в строке «Автор»
+# pandoc читает как ссылку на литературу, typst падает на #cite(<Artur>), а
+# HTML получает пустую сноску. В ТЗ упоминаний через @ хватает, литературы нет.
+MD_FROM = "markdown-citations"
+
 def build_markdown(docs, out_md, corpus_arg, strict):
     """Пакет для читателей-ИИ: чистый markdown, каждый документ под своим H1."""
     err = ensure_parent(out_md)
@@ -297,8 +302,8 @@ def build_pdf(doc, out_pdf, corpus_arg, want, strict):
         failed, typst_tried = [], False
         if want in ("auto", "typst") and shutil.which("typst"):
             typst_tried = True
-            cmd = ["pandoc", mdfile, "-o", newpdf, "--pdf-engine=typst",
-                   "--resource-path", docdir]
+            cmd = ["pandoc", mdfile, "-f", MD_FROM, "-o", newpdf,
+                   "--pdf-engine=typst", "--resource-path", docdir]
             if not own_h1:
                 cmd += ["--metadata", "title=" + title]
             since = time.time()
@@ -313,7 +318,7 @@ def build_pdf(doc, out_pdf, corpus_arg, want, strict):
             # поставить typst, который стоит и только что упал.
             failed.append("  - typst: %s" % (err or "вернул 0, но PDF не записан"))
 
-        cmd = ["pandoc", mdfile, "-s", "-o", html, "--css", cssfile,
+        cmd = ["pandoc", mdfile, "-f", MD_FROM, "-s", "-o", html, "--css", cssfile,
                "--metadata", ("pagetitle=" if own_h1 else "title=") + title,
                "--embed-resources", "--resource-path", docdir]
         code, err = run(cmd)

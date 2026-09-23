@@ -72,6 +72,14 @@ esac
 
 out="$(python3 "$EP" "$P/spec/док.md" -o "$P/нет-каталога/док.pdf" --engine html 2>&1)"; rc=$?
 [ "$rc" -eq 0 ] && ok || bad "--engine html: rc=0 (got $rc): $out"
+# «@Artur» в строке «Автор»: pandoc читал его как ссылку на литературу,
+# typst падал на #cite(<Artur>), HTML получал пустую сноску. Расширение
+# citations у входного диалекта выключено.
+printf -- '---\ntitle: "Автор"\n---\n\n# Автор\n\nАвтор: @Artur, аналитик.\n' > "$P/spec/автор.md"
+python3 "$EP" "$P/spec/автор.md" -o "$P/автор.pdf" --engine html >/dev/null 2>&1
+ah="$(cat "$P/автор.html" 2>/dev/null)"
+has "@Artur" "$ah" "html: «@Artur» остался текстом"
+hasnt 'class="citation"' "$ah" "html: pandoc не сделал из @Artur ссылку на литературу"
 [ -s "$P/нет-каталога/док.html" ] && ok || bad "-o в несуществующий каталог: каталог создан, файл записан"
 h="$(cat "$P/нет-каталога/док.html" 2>/dev/null)"
 has "конвенцию" "$h" "html: wikilink разрешился в текст"
@@ -129,6 +137,8 @@ head -c 4 "$P/типст.pdf" | grep -q '%PDF' && ok || bad "--engine typst: н�
 out="$(python3 "$EP" "$P/spec/типст.md" -o "$P/типст-auto.pdf" --engine auto 2>&1)"; rc=$?
 [ "$rc" -eq 0 ] && ok || bad "--engine auto с typst: rc=0 (got $rc): $out"
 has "(typst)" "$out" "--engine auto: typst первый в цепочке"
+out="$(python3 "$EP" "$P/spec/автор.md" -o "$P/автор-typst.pdf" --engine typst 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok || bad "typst: «@Artur» не валит движок (got rc=$rc): $out"
 if command -v pdftotext >/dev/null 2>&1; then
   t="$(pdftotext "$P/типст.pdf" - 2>/dev/null)"
   has "Свой заголовок" "$t" "typst: кириллический заголовок в текстовом слое"
@@ -139,6 +149,7 @@ if command -v pdftotext >/dev/null 2>&1; then
   [ "$(printf '%s\n' "$t" | grep -c 'Свой заголовок')" -eq 1 ] && ok || bad "typst: заголовок двоится"
   has "Свой заголовок" "$(pdftotext "$P/типст-auto.pdf" - 2>/dev/null)" \
     "typst через auto: текст на месте"
+  has "@Artur" "$(pdftotext "$P/автор-typst.pdf" - 2>/dev/null)" "typst: @Artur в текстовом слое"
 else
   [ "$(wc -c < "$P/типст.pdf" | tr -d ' ')" -gt 2000 ] && ok \
     || bad "typst: PDF подозрительно мал (текстовый слой не проверить — нет pdftotext)"
