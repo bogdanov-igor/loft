@@ -7,7 +7,7 @@ co-author analyst. Everything else follows from that.
 
 ## The contract
 
-[`.claude/CLAUDE.md`](../../bundle/.claude/CLAUDE.md) — 148 lines, ~3k
+[`.claude/CLAUDE.md`](../../bundle/.claude/CLAUDE.md) — 149 lines, ~3k
 tokens, always in context and the only thing that always is. It fixes three
 things.
 
