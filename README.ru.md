@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.3-d89a4a?style=flat-square" alt="версия 1.3.3">
+  <img src="https://img.shields.io/badge/version-1.3.4-d89a4a?style=flat-square" alt="версия 1.3.4">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
-  <img src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-404%20KB%20%C2%B7%2033%20%D1%84%D0%B0%D0%B9%D0%BB%D0%B0-success?style=flat-square" alt="404 КБ, 33 файла">
+  <img src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-452%20KB%20%C2%B7%2033%20%D1%84%D0%B0%D0%B9%D0%BB%D0%B0-success?style=flat-square" alt="452 КБ, 33 файла">
   <img src="https://img.shields.io/badge/%D1%81%D0%BA%D0%B8%D0%BB%D0%BB%D0%BE%D0%B2-15-success?style=flat-square" alt="15 скиллов">
   <img src="https://img.shields.io/badge/%D1%81%D0%B5%D1%80%D0%B2%D0%B8%D1%81%D0%BE%D0%B2%20%D0%B2%20%D1%80%D0%B0%D0%BD%D1%82%D0%B0%D0%B9%D0%BC%D0%B5-0-success?style=flat-square" alt="ноль сервисов в рантайме">
   <img src="https://img.shields.io/badge/%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82-148%20%D1%81%D1%82%D1%80%D0%BE%D0%BA-success?style=flat-square" alt="контракт 148 строк">
@@ -37,7 +37,7 @@ Loft пришёл на смену specos: ту систему я закопал 
 
 ## Быстрый старт
 
-**1.** Скачайте `loft_1.3.3.tgz` и `loft_1.3.3.tgz.sha256` из
+**1.** Скачайте `loft_1.3.4.tgz` и `loft_1.3.4.tgz.sha256` из
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) в папку
 проекта.
 
@@ -54,8 +54,8 @@ Loft пришёл на смену specos: ту систему я закопал 
 
 ```sh
 cd /path/to/project                    # сюда скопированы tgz + .sha256
-shasum -c loft_1.3.3.tgz.sha256        # сначала целостность: ждём "OK"
-tar -xzf loft_1.3.3.tgz
+shasum -c loft_1.3.4.tgz.sha256        # сначала целостность: ждём "OK"
+tar -xzf loft_1.3.4.tgz
 bash loft/install.sh                   # без аргумента = ставим прямо здесь
 ```
 
@@ -180,6 +180,12 @@ lxml); LLM к содержимому не прикасается.
   `class`/`style`/`rel`/`data-*` снимается до pandoc, поэтому ссылка выходит как
   `[текст](url)` → `[[wikilink]]`, а не сырым `<a class=...>`; jira-аватарки и
   эмотиконы выпиливаются.
+- Цвет со смыслом доезжает: небазовый цвет текста и подсветка ячейки
+  выходят `<span style="color:#hex">`, цвета темы отбрасываются. Ссылка,
+  которую Confluence не отрисовал, сохраняет слова, вшитая `data:`-картинка
+  становится файлом в `assets/`, ручной markdown из редактора склеивается в
+  одну ссылку, а относительная ссылка вне выгрузки получает хост из
+  `--base-url`.
 - Повторный ingest обновляет снапшот: устаревшие страницы удаляются (файлы
   без `confluence_id` — никогда, массовое удаление блокируется до явного
   `--allow-mass-removal`), а вы получаете отчёт изменений —

@@ -84,3 +84,22 @@ has '`a\|b`' "$md" "md_cells: инлайн-код цел, пайп экрани�
 has '\[скобками\]' "$md" "md_cells: соседняя ячейка без markdown экранируется как раньше"
 has '\[\[СИ-1\|Регистрация\]\]' "$plain" "по умолчанию (convert.py) экранирование прежнее"
 has '\*\*важно\*\*' "$plain" "по умолчанию болд экранируется"
+
+# ── tablemd: цвет ячейки и цветной span (convert.py 2.5) ────────────────────
+section "tablemd — цвет ячейки и span"
+out="$(python3 - "$SK/ingest-confluence/scripts" <<'EOF'
+import sys; sys.path.insert(0, sys.argv[1])
+from lxml import html as H
+import tablemd
+t = H.fragment_fromstring('<table><tr><th>А</th><th>Б</th></tr>'
+    '<tr><td style="background-color:#ffebe6">да</td>'
+    '<td><span style="color:#1f845a">x</span> и <span style="color: red; font-weight:bold">y</span></td></tr>'
+    '<tr><td style="background-color:#ffebe6">  </td><td>z</td></tr></table>')
+print(tablemd.table_to_gfm(t))
+print("CANON:%r|%r" % (tablemd.canon_style("color:#1f845a;background-color:#ffebe6"), tablemd.canon_style("color: red")))
+EOF
+)"
+has '| <span style="background-color:#ffebe6">да</span> |' "$out" "подсветка ячейки стала span вокруг содержимого"
+has '<span style="color:#1f845a">x</span> и y' "$out" "канонический span цел, чужой стиль прозрачен"
+has '|  | z |' "$out" "пустая подсвеченная ячейка не получает пустой span"
+has "CANON:'color:#1f845a;background-color:#ffebe6'|''" "$out" "canon_style принимает только форму конвертера"

@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.3-d89a4a?style=flat-square" alt="version 1.3.3">
+  <img src="https://img.shields.io/badge/version-1.3.4-d89a4a?style=flat-square" alt="version 1.3.4">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0">
-  <img src="https://img.shields.io/badge/kernel-404%20KB%20%C2%B7%2033%20files-success?style=flat-square" alt="404 KB, 33 files">
+  <img src="https://img.shields.io/badge/kernel-452%20KB%20%C2%B7%2033%20files-success?style=flat-square" alt="452 KB, 33 files">
   <img src="https://img.shields.io/badge/skills-15-success?style=flat-square" alt="15 skills">
   <img src="https://img.shields.io/badge/runtime%20services-0-success?style=flat-square" alt="zero runtime services">
   <img src="https://img.shields.io/badge/contract-148%20lines-success?style=flat-square" alt="148-line contract">
@@ -45,7 +45,7 @@ The post-mortem — including what was measured and what wasn't — is in
 
 ## Quickstart
 
-**1.** Download `loft_1.3.3.tgz` and `loft_1.3.3.tgz.sha256` from
+**1.** Download `loft_1.3.4.tgz` and `loft_1.3.4.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -62,8 +62,8 @@ project folder.
 
 ```sh
 cd /path/to/project                    # tgz + .sha256 copied here
-shasum -c loft_1.3.3.tgz.sha256        # integrity first: expect "OK"
-tar -xzf loft_1.3.3.tgz
+shasum -c loft_1.3.4.tgz.sha256        # integrity first: expect "OK"
+tar -xzf loft_1.3.4.tgz
 bash loft/install.sh                   # no argument = install right here
 ```
 
@@ -192,6 +192,12 @@ lxml); no LLM touches the content on the way through.
   Attribute noise (`class`/`style`/`rel`/`data-*`) is scrubbed before pandoc, so
   a link comes out as `[text](url)` → `[[wikilink]]` rather than raw
   `<a class=...>`; Jira avatars and emoticons are dropped.
+- Colour that carries meaning survives: a non-default text colour or a
+  highlighted cell comes out as `<span style="color:#hex">`, the theme's own
+  colours are dropped. A link Confluence failed to render keeps its words, an
+  inline `data:` picture becomes a file in `assets/`, markdown typed by hand in
+  the editor becomes one link, and a relative link out of the export gets its
+  host from `--base-url`.
 - Re-running the ingest updates the snapshot: stale pages are removed (files
   without a `confluence_id` never are, and a mass removal is blocked until you
   say `--allow-mass-removal`), and you get a change report —

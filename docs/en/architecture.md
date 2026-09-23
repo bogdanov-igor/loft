@@ -172,6 +172,10 @@ output checkable.
 - Attachment link names are restored from the
   `data-linked-resource-default-alias` attribute, so links read as file
   names, not `download.xhtml?...`.
+- Meaningful colour survives as `<span style="color:#hex">`, theme colours
+  do not. A link Confluence failed to render keeps its words, an inline
+  `data:` picture becomes a file, hand-typed markdown becomes one link, a
+  relative link out of the export gets its host from `--base-url`.
 - Re-ingest updates the snapshot. Stale pages are removed, files without a
   `confluence_id` in front matter are never touched — hand-written pages
   inside `wiki/` are safe. Removing many pages at once is blocked until you

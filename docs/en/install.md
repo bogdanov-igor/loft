@@ -13,7 +13,7 @@ Nothing else: no MCP server, no daemon, no index to build.
 
 ## Quickstart
 
-**1.** Download `loft_1.3.3.tgz` and `loft_1.3.3.tgz.sha256` from
+**1.** Download `loft_1.3.4.tgz` and `loft_1.3.4.tgz.sha256` from
 [Releases](https://github.com/bogdanov-igor/loft/releases/latest) into your
 project folder.
 
@@ -34,8 +34,8 @@ Both paths run the same installer.
 
 ```sh
 cd /path/to/project                 # copy both files here
-shasum -c loft_1.3.3.tgz.sha256     # verify integrity first: expect "OK"
-tar -xzf loft_1.3.3.tgz
+shasum -c loft_1.3.4.tgz.sha256     # verify integrity first: expect "OK"
+tar -xzf loft_1.3.4.tgz
 bash loft/install.sh                # no argument = install into this directory
 ```
 

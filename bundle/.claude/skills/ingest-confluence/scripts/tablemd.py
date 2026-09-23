@@ -29,6 +29,11 @@ Shared by convert.py (v2) and fix_tables.py. Design rules:
   an ALREADY converted wiki): a cell whose text already carries markdown
   ([[wikilink]], **bold**, `code`) is not escaped -- only "|" is. Off by default,
   so a fresh export (convert.py) keeps escaping every cell as plain text.
+- a cell with style="background-color:#hex" (convert.py 2.5 puts it on a
+  coloured td/th) -> its non-empty content wrapped in
+  <span style="background-color:#hex">...</span>; a <span> with that same
+  canonical colour style (canon_style) keeps it inside the cell -- fix_tables
+  meets such spans when it turns a raw 2.5 table into a pipe table.
 """
 import os, re, html, base64
 import urllib.parse
@@ -199,6 +204,12 @@ def _render_inline(el):
     if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
         inner = _render_children(el).strip()
         return f"**{inner}**" if inner else ""
+    # a colour span (convert.py 2.5 form, met by fix_tables in raw tables)
+    if tag == "span" and canon_style(el.get("style")):
+        inner = _render_children(el)
+        if inner.strip():
+            return f'<span style="{canon_style(el.get("style"))}">{inner}</span>'
+        return inner
     # p / div / blockquote / span / font / anything else -> transparent
     return _render_children(el)
 
@@ -295,6 +306,25 @@ def _cell_md(cell):
 
 
 # ---------------------------------------------------------------- table -> GFM
+_CELL_BG = re.compile(r"(?:^|;)\s*background-color\s*:\s*(#[0-9A-Fa-f]{6})\s*(?:;|$)")
+_CANON_STYLE = re.compile(r"(?:color:#[0-9a-f]{6}(?:;background-color:#[0-9a-f]{6})?"
+                          r"|background-color:#[0-9a-f]{6})")
+
+def canon_style(s):
+    """The style convert.py 2.5 writes for colour -- 'color:#hex',
+    'background-color:#hex' or both -- else ''. fix_tables keeps exactly this
+    form through its attribute scrub, and a span carrying it keeps its colour
+    when a raw table becomes a pipe table."""
+    s = (s or "").strip()
+    return s if _CANON_STYLE.fullmatch(s) else ""
+
+def cell_bg(cell):
+    """Background a cell keeps (convert.py sets style="background-color:#hex"
+    on a coloured td/th; a pipe table has no cell attributes, so the colour
+    goes on a span around the content). -> '#hex' or ''."""
+    m = _CELL_BG.search(cell.get("style") or "")
+    return m.group(1).lower() if m else ""
+
 def _span(cell, attr):
     v = (cell.get(attr) or "").strip()
     return int(v) if v.isdigit() and int(v) > 1 else 1
@@ -345,6 +375,9 @@ def table_to_gfm(table, indent="", unroll_pre=False, expand_spans=False,
                 c = queue.pop(0)
                 k = len(_unroll) if _unroll is not None else 0
                 txt = cell_md(c, md_cells)
+                bg = cell_bg(c)
+                if bg and txt.strip():           # a painted cell: never an empty span
+                    txt = f'<span style="background-color:{bg}">{txt}</span>'
                 if _unroll is not None:          # bind fresh examples to a cell
                     for e in _unroll[k:]:
                         e["row"], e["col"] = len(rows), col

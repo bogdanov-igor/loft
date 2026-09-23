@@ -28,7 +28,9 @@ are never touched:
    same as convert.py clean_dom): class/style/rel/data-*/aria-* noise from
    Confluence exports disappears, <td colspan>, <img src alt>,
    <pre|code class>, <a href title name id> survive; unquoted and
-   single-quoted attribute values are understood, not dropped;
+   single-quoted attribute values are understood, not dropped. The colour
+   convert.py 2.5 writes (<span|td|th style="color:#hex;background-color:
+   #hex">, exactly that form) survives too -- scrubbed, it left bare <span>;
 5. raw Confluence HTML <table> blocks -> GFM pipe tables via tablemd;
    fallback (kept as raw HTML, logged): colspan/rowspan (unless
    --expand-spans), nested tables, long/indented <pre> in cells, tables that
@@ -484,13 +486,17 @@ def tbl_imgs_to_embeds(text):
 
 
 def _scrub_open_tags(segment):
-    """Whitelist-scrub attributes of raw-HTML opening tags in a text segment."""
+    """Whitelist-scrub attributes of raw-HTML opening tags in a text segment.
+    style survives on span/td/th ONLY in the form convert.py 2.5 writes for
+    colour (tablemd.canon_style): Confluence's own style noise still goes."""
     def sub(m):
         tag, attrs_s, selfc = m.group(1).lower(), m.group(2) or "", m.group(3)
         keep = KEEP_ATTRS.get(tag)
         if keep is None:                          # unknown tag -> not our HTML
             return m.group(0)
         attrs = _attrs(attrs_s)
+        if tag in ("span", "td", "th") and tablemd.canon_style(attrs.get("style")):
+            keep = keep + ("style",)
         kept = "".join((f" {k}='{attrs[k]}'" if '"' in attrs[k]
                         else f' {k}="{attrs[k]}"') for k in keep if k in attrs)
         return f"<{tag}{kept}{'/' if selfc else ''}>"

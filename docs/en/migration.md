@@ -20,7 +20,7 @@ second, and is careful never to confuse them.
 
 ```sh
 cd /path/to/project
-shasum -c loft_1.3.3.tgz.sha256 && tar -xzf loft_1.3.3.tgz
+shasum -c loft_1.3.4.tgz.sha256 && tar -xzf loft_1.3.4.tgz
 bash loft/install.sh
 ```
 
